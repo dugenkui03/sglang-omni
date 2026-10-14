@@ -13,6 +13,7 @@ inheriting from ``SGLangScheduler``.
 
 from __future__ import annotations
 
+import json
 import logging
 import queue as _queue_mod
 import threading
@@ -284,6 +285,7 @@ class OmniSchedulerArguments(TypedDict, Generic[RequestDataT], total=False):
 class OmniScheduler(Generic[RequestDataT]):
     """Stage-facing scheduler for AR stages.
 
+    NOTE: 所有调度器都实现相同的接口，如下
     Public contract (used by Stage):
         ``inbox``, ``outbox``, ``start()``, ``stop()``, ``abort(request_id)``
 
@@ -1164,6 +1166,10 @@ class OmniScheduler(Generic[RequestDataT]):
 
     def process_input_requests(self, recv_reqs: list[StagePayload]) -> None:
         """Convert incoming payloads to SGLang Reqs and enqueue."""
+        if recv_reqs:
+            logger.info("转换请求格式并将请求入队\nrecv_reqs.length=%s", len(recv_reqs))
+        else:
+            pass
         ordinary_payloads: list[StagePayload] = []
         for payload in recv_reqs:
             try:
@@ -1263,6 +1269,7 @@ class OmniScheduler(Generic[RequestDataT]):
                 self.emit_request_error(req_id, exc)
                 self.abort(req_id)
                 continue
+            logger.info("请求构建成功，准备入队\nrequest_id=%s", req_id)
             self.admit_or_defer_built_request(payload, pending_stream_done, req_data)
         if submitted_build:
             # note (luojiaxuan): the drain admits from the head of the pending
@@ -1589,6 +1596,8 @@ class OmniScheduler(Generic[RequestDataT]):
         *,
         request_admission_lock_held: bool = False,
     ) -> None:
+        logger.info("请求入队\n%s",
+            json.dumps({"request_id": payload.request_id, "input_type": type(payload.request.inputs).__name__, "param_keys": list(payload.request.params)}, ensure_ascii=False, indent=2))
         req_id = payload.request_id
         self.deferred_request_payloads.pop(req_id, None)
         session_unit = self.active_session_unit(req_id)
@@ -1711,6 +1720,7 @@ class OmniScheduler(Generic[RequestDataT]):
             req._omni_terminal_claimed = False  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             req.omni_data = req_data  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             self.waiting_queue.append(req)
+            logger.info("请求入队成功\nrequest_id=%s, waiting_queue_size=%s", req_id, len(self.waiting_queue))
             enqueued_unit = self.active_session_unit(req_id)
             if enqueued_unit is not None:
                 enqueued_unit.is_enqueued = True
@@ -1879,7 +1889,14 @@ class OmniScheduler(Generic[RequestDataT]):
             running_batch.batch_is_full = False
         else:
             pass
+        # NOTE 就是 sglang 的 Scheduler
+        #   import Scheduler as _Upstream
         plan = _Upstream.get_next_batch_to_run(self, running_batch, self.last_batch)
+        if plan.batch_to_run is not None:
+            logger.info("组批结果\n%s",
+                json.dumps({"batch_size": len(plan.batch_to_run.reqs), "running_size": len(plan.running_batch.reqs), "waiting_size": len(self.waiting_queue)}, ensure_ascii=False, indent=2))
+        else:
+            pass
         self.running_batch = plan.running_batch
         return plan.batch_to_run
 
@@ -1968,6 +1985,23 @@ class OmniScheduler(Generic[RequestDataT]):
             return _FAILED_BATCH_RESULT
 
     def process_batch_result(self, batch, result) -> None:
+        """
+        调用链路
+
+        OmniScheduler.process_batch_result()
+            → _Upstream.process_batch_result()
+                │
+                ├─ ① 更新请求：追加 token、判断结束、处理 KV 缓存
+                │
+                └─ ② OmniScheduler.stream_output()：处理已完成请求
+                    → result_adapter()：整理累计音频编码
+                    → self.outbox.put(...)  ← 交给同进程的 Stage
+                        │
+                        → Stage.drain_outbox_external()
+                        → Stage.route_result()
+                            ├─ tts_engine 的结果 → 下游 vocoder
+                            └─ vocoder 最终结果 → Coordinator       // 重点，将数据给到上游 Coordinator
+        """
         _Upstream.process_batch_result(self, batch, result)
         # note (Richard Wang): cache prompt before blocking tail inserts
         for req in batch.reqs:
@@ -1999,11 +2033,19 @@ class OmniScheduler(Generic[RequestDataT]):
         ``ModelRunnerOutput``.  The upstream ``process_batch_result`` expects
         a ``GenerationBatchResult``.  We bridge the two formats here.
         """
+        logger.info("执行批处理\nbatch_type=%s", type(batch).__name__)
         del pp_proxy_tensors
         self.emit_prefill_start_for_batch(batch)
         self.stamp_batch_launch(batch)
         sched_output = self.build_sched_output(batch)
+        logger.info("开始执行模型推理")
         mr_output = self.model_runner.execute(sched_output)
+        result_fields = {"batch_size": len(mr_output.req_ids),
+            "token_shape": list(mr_output.next_token_ids.shape) if mr_output.next_token_ids is not None else None,
+            "token_preview": mr_output.host_token_ids[:4].tolist() if mr_output.host_token_ids is not None else []}
+        logger.info("推理完成，结果详情\n%s",
+            json.dumps(result_fields, ensure_ascii=False, indent=2))
+
         self.emit_prefill_end_for_batch(batch)
         self.emit_stream_output(sched_output, mr_output)
         return self.make_batch_result(mr_output)
@@ -2420,10 +2462,12 @@ class OmniScheduler(Generic[RequestDataT]):
         pass
 
     def start(self) -> None:
+        logger.info("启动调度器(Scheduler)，监听请求、组批和推理")
         self.scheduler_thread_id = threading.get_ident()
         self.running = True
         model_path_status = "error"
         try:
+            # NOTE 类似 sglang 中的Scheduler概念，执行接收请求并组批等操作
             if self.enable_async_decode:
                 self.event_loop_async_decode()
             elif self.enable_overlap:
@@ -3224,10 +3268,19 @@ class OmniScheduler(Generic[RequestDataT]):
         # AR scheduler loop pins the GIL and the audio_encoder forward pass
         # (which is mostly Python-side dispatch into many small CUDA kernels)
         # slows ~600x, dropping audio QPS from >10 to <0.5.
+        logger.info("启动普通调度循环")
         while self.running:
             self.process_admin_requests()
             recv_reqs = self.recv_requests()
+            if recv_reqs:
+                request_fields = [{"request_id": payload.request_id,
+                    "input_type": type(payload.request.inputs).__name__, "param_keys": list(payload.request.params)} for payload in recv_reqs]
+                logger.info("收到请求\n%s",
+                    json.dumps(request_fields, ensure_ascii=False, indent=2))
+            else:
+                pass
             recv_reqs.extend(self.take_deferred_request_payloads())
+            # NOTE 请求入队列
             self.process_input_requests(recv_reqs)
             if self._engine_paused:  # noqa: leading-underscore
                 self.process_admin_requests()
@@ -3236,12 +3289,15 @@ class OmniScheduler(Generic[RequestDataT]):
             else:
                 pass
 
+            # NOTE 牛逼了，组批
             batch = self.get_next_batch_to_run()
             self.cur_batch = batch
 
             if batch:
+                # NOTE 执行批处理
                 result = self.run_batch(batch)
                 if result is not _FAILED_BATCH_RESULT:
+                    # 处理结果进行解码、转换成音频、并将结果给到上游进程 Coordinator
                     self.process_batch_result(batch, result)
                 else:
                     pass

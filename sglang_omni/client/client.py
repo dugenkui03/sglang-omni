@@ -107,7 +107,14 @@ class StreamedStopTrimmer:
 
 
 class Client:
-    """Internal client used by API adapters."""
+    """Internal client used by API adapters.
+    
+    NOTE 请求数据流如下，client 相当于 HTTP API 和 Coordinator 的一个中间层
+        HTTP API -> Client -> Coordinator -> Stages(sub process)
+
+    核心方法：
+    
+    """
 
     def __init__(
         self,
@@ -154,20 +161,29 @@ class Client:
         request: GenerateRequest,
         request_id: str | None = None,
     ) -> AsyncIterator[GenerateChunk]:
+        """
+            入口方法
+        """
+        # 请求ID
         req_id = request_id or str(uuid.uuid4())
+        # 请求数据格式转换
         omni_request = self.build_omni_request(request)
         if request.stream:
+            # NOTE 流式请求调用
             coordinator_stream = self.coordinator.stream(req_id, omni_request)
             async with aclosing(coordinator_stream):
                 async for msg in coordinator_stream:
                     if isinstance(msg, StreamMessage):
+                        # 处理流式结果
                         yield self.stream_builder(req_id, msg)
                     else:
+                        # 调用结束了
                         yield self.result_builder(req_id, msg.result)
             return
         else:
             pass
 
+        # NOTE 普通链路请求 -> 提交给 Coordinator
         result = await self.coordinator.submit(req_id, omni_request)
         yield self.result_builder(req_id, result)
 

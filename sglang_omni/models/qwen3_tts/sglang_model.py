@@ -269,6 +269,7 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
         prefix: str = "",
     ) -> None:
         super().__init__()
+        self.layer_id = layer_id
         self.self_attn = Qwen3OmniMoeThinkerTextAttention(
             hidden_size=config.hidden_size,
             num_heads=config.num_attention_heads,
@@ -302,18 +303,25 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
         forward_batch: ForwardBatch,
         residual: Optional[torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        logger.info("开始 Transformer 层计算\nhidden_states.shape=%s", hidden_states.shape)
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
             hidden_states, residual = self.input_layernorm(hidden_states, residual)
+        logger.info("完成输入归一化\nhidden_states.shape=%s", hidden_states.shape) # todo，优化成打印输入输出形状，并打印输入和输出的前5个元素
 
+        # NOTE 注意力机制的实现，todo Qwen3OmniMoeThinkerTextAttention 类
+        logger.info("开始注意力计算，layer_id=%s", self.layer_id)
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
             forward_batch=forward_batch,
         )
+        logger.info("完成注意力计算\nlayer_id=%s, hidden_states.shape=%s", self.layer_id, hidden_states.shape)
+        # TODO 这是啥？
         hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
+        # TODO mlp Qwen3OmniMoeTalkerDenseMLP
         hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
 
@@ -328,9 +336,10 @@ class Qwen3TTSTalkerTextModel(nn.Module):
         )
         self.layers = nn.ModuleList(
             [
+                # NOTE transformer layer 是 Qwen3TTSTalkerDecoderLayer
                 Qwen3TTSTalkerDecoderLayer(
                     config,
-                    idx,
+                    idx, # 是第几层 transformer layer
                     prefix=add_prefix(f"layers.{idx}", prefix),
                 )
                 for idx in range(config.num_hidden_layers)
@@ -386,18 +395,22 @@ class Qwen3TTSTalkerTextModel(nn.Module):
         forward_batch: ForwardBatch,
         input_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        logger.info("进入模型主链路\ninput_ids.shape=%s", input_ids.shape)
         forward_mode = getattr(forward_batch, "forward_mode", None)
         is_decode = forward_mode is not None and forward_mode.is_decode()
         if input_embeds is None:
             if is_decode:
                 hidden_states = self.decode_feedback_embedding(input_ids)
+                logger.info("解码(Decode)输入\ninput_ids.shape=%s, hidden_states.shape=%s", input_ids.shape, hidden_states.shape)
             else:
                 hidden_states = self.build_input_hidden_states(input_ids)
+                logger.info("预填充(Prefill)输入\ninput_ids.shape=%s, hidden_states.shape=%s", input_ids.shape, hidden_states.shape)
         else:
             hidden_states = input_embeds
 
         residual = None
-        layers = self.layers
+        layers = self.layers # NTOE Qwen3TTSTalkerDecoderLayer 类型
+        before_layer_hidden_states = hidden_states
         for idx in range(self.start_layer, self.end_layer):
             hidden_states, residual = layers[idx](
                 positions=positions,
@@ -405,11 +418,27 @@ class Qwen3TTSTalkerTextModel(nn.Module):
                 forward_batch=forward_batch,
                 residual=residual,
             )
+        logger.info("完成所有 Transformer 层计算\ninput_ids.shape=%s, hidden_states.shape：处理前=%s，处理后=%s",
+            input_ids.shape, before_layer_hidden_states.shape, hidden_states.shape)
+        
+        # residual 是带合并的残差tensor
         if residual is None:
             return self.norm(hidden_states)
         else:
             pass
+
+        # self.norm/RMSNorm 操作如下
+        
+        # hidden_states = [[1,2], [2,1]]       shape=[2,2]
+        # residual      = [[2,2], [2,2]]       shape=[2,2]
+        # weight        = [2,1]                shape=[2]
+        
+        
+        # 第一步：直接和残差tensor 相加：x = hidden_states + residual = [[3,4], [4,3]]
+        # 第二步：归一化：z = x / sqrt(mean(x², 按行)) ≈ [[0.849,1.131], [1.131,0.849]]
+        # 第三步：缩放投影 output = z × weight           ≈ [[1.698,1.131], [2.262,0.849]]
         hidden_states, _ = self.norm(hidden_states, residual)
+        logger.info("完成最终残差合并与归一化\nhidden_states.shape=%s", hidden_states.shape)
         return hidden_states
 
 
@@ -1262,18 +1291,21 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         input_embeds_are_projected: bool = False,
         omni_prefill_rids: list[str] | None = None,
     ) -> LogitsProcessorOutput:
+        logger.info("开始推理\ninput_ids.shape=%s", input_ids.shape)
         del input_embeds_are_projected, omni_prefill_rids
         if forward_batch.mrope_positions is not None:
             positions = forward_batch.mrope_positions
         else:
             pass
 
+        # Qwen3TTSTalkerTextModel 类型，整个推理流程都在里边
         hidden_states = self.model(
             input_ids=input_ids,
             positions=positions,
             forward_batch=forward_batch,
             input_embeds=input_embeds,
         )
+        logger.info("Talker 主模型推理完成\nhidden_states.shape=%s", hidden_states.shape)
         if forward_batch.forward_mode.is_extend():
             last_index = self.extend_last_index(forward_batch, hidden_states.device)
             hidden_states = hidden_states[last_index]
@@ -2263,5 +2295,11 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             ):
                 table.copy_(self.code_predictor.project_input(embedding.weight))
 
-
+# NOTE 声明该模块的入口类模型 
 EntryClass = Qwen3TTSTalker
+# OmniScheduler
+# └─ model_runner：Qwen3TTSModelRunner，处理 TTS 推理前后逻辑
+#     └─ tp_worker：ModelWorker
+#         └─ model_runner：SGLModelRunner，继承 SGLang ModelRunner
+#             └─ model：Qwen3TTSTalker  ← 真正的模型实例
+

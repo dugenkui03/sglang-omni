@@ -9,7 +9,9 @@ from sglang_omni.pipeline.stage.stream_queue import StreamItem
 
 
 class RequestState(Enum):
-    """State of a request in the pipeline."""
+    """State of a request in the pipeline.
+     PENDING -> RUNNING -> COMPLETED/FAILED/ABORTED
+    """
 
     PENDING = "pending"
     RUNNING = "running"

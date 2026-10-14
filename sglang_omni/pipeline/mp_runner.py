@@ -9,10 +9,14 @@ one-process-per-rank TP topology.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import multiprocessing
 from collections.abc import Mapping
+from dataclasses import asdict
 from typing import TypedDict
+
+from pydantic_core import to_json
 
 from sglang_omni.config.placement import (
     StagePlacementPlan,
@@ -139,6 +143,8 @@ def build_stage_groups(
 
     The caller owns endpoint allocation and IPC runtime-dir lifecycle. This
     helper only converts prepared runtime state into subprocess specs.
+
+    NOTE 只是创建 stage 配置，没有创建 stage 对象
     """
     if ctx is None:
         ctx = multiprocessing.get_context("spawn")
@@ -150,6 +156,18 @@ def build_stage_groups(
         replica_topology = ReplicaTopology()
     else:
         pass
+
+    launch_layout = {
+        "config": config.model_dump(mode="json"),
+        "ctx_start_method": ctx.get_start_method(),
+        "stages_cfg": [stage.model_dump(mode="json") for stage in stages_cfg],
+        "endpoints": endpoints,
+        "placement_plan": asdict(placement_plan),
+        "process_plan": asdict(process_plan),
+        "replica_topology": asdict(replica_topology),
+    }
+    logger.info("根据运行布局构建阶段组(StageGroup)\n%s",
+        json.dumps(launch_layout, ensure_ascii=False, indent=2))
 
     stage_endpoints = {s.name: endpoints[f"stage_{s.name}"] for s in stages_cfg}
     rank_endpoints = {
@@ -281,7 +299,16 @@ def build_stage_groups(
         )
     groups.extend(tp_groups)
     attach_process_memory_fraction_defaults(groups)
-
+    group_summaries = [
+        {
+            "group_name": group.group_name,
+            "process_names": [spec.process_name for spec in group.process_specs],
+            "stage_names": [spec.stage_name for spec in group.specs],
+        }
+        for group in groups
+    ]
+    logger.info("构建阶段组(StageGroup)完成\ngroups=%s",
+        to_json(group_summaries, indent=2).decode("utf-8"))
     return groups
 
 
@@ -610,6 +637,7 @@ class MultiProcessPipelineRunner:
 
     def __init__(self, config: PipelineConfig) -> None:
         self.config = config
+        # NOTE 在 self.start() 中进行初始化
         self._coordinator: Coordinator | None = (
             None  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
         )
@@ -664,6 +692,8 @@ class MultiProcessPipelineRunner:
         return endpoints
 
     async def start(self, timeout: float = 120.0) -> None:
+        logger.info("启动多进程流水线\ntimeout_seconds=%s, stages=%s",
+            timeout, to_json(self.config.stages, indent=2).decode("utf-8"))
         if self.started:
             raise RuntimeError("Already started")
         else:
@@ -673,6 +703,7 @@ class MultiProcessPipelineRunner:
             ctx = multiprocessing.get_context("spawn")
             self.fatal_event = asyncio.Event()
             self.fatal_error = None
+            # NOTE 运行布局
             prep = prepare_pipeline_runtime(
                 self.config,
                 ipc_runtime_dir=self.ipc_runtime_dir,
@@ -680,6 +711,7 @@ class MultiProcessPipelineRunner:
             self._prep = prep  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             self.ipc_runtime_dir = prep.runtime_dir
             validate_gpu_capacity(prep.placement_plan)
+            # NOTE 构建stage配置，但是并没有创建 stage 对象
             groups = build_stage_groups(
                 self.config,
                 ctx,
@@ -719,6 +751,8 @@ class MultiProcessPipelineRunner:
             self._coordinator = Coordinator(  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
                 completion_endpoint=prep.endpoints["completion"],
                 abort_endpoint=prep.endpoints["abort"],
+                # NOTE 指定入口 stage
+                #  入口stage 在模型的 PipelineConfig 或者其子类中定义：可以显式用字段指定，或者获取 stages[0]
                 entry_stage=prep.entry_stage,
                 terminal_stages=self.config.terminal_stages or None,
                 terminal_stages_resolver=terminal_stages_resolver,
@@ -726,6 +760,10 @@ class MultiProcessPipelineRunner:
                 logical_process_plan=prep.logical_process_plan,
                 max_in_flight=max_in_flight,
             )
+            coordinator_fields = {"entry_stage": self._coordinator.entry_stage,
+                "terminal_stages": sorted(self._coordinator.terminal_stages), "max_in_flight": max_in_flight}
+            logger.info("构建 Coordinator 成功\n%s",
+                json.dumps(coordinator_fields, ensure_ascii=False, indent=2))
             if max_in_flight is not None:
                 logger.info(
                     "Coordinator in-flight cap=%s (generation running+queued)",
@@ -733,8 +771,17 @@ class MultiProcessPipelineRunner:
                 )
             else:
                 pass
+            # NOTE 启动 _coordinator
             await self._coordinator.start()  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             self.completion_task = asyncio.create_task(
+                # NOTE
+                #
+                # 接收音频解码消息
+                #
+                # Coordinator.run_completion_loop()
+                #     → CoordinatorControlPlane.recv_event()
+                #     → PullSocket.recv()
+                #     → await self.socket.recv()  ← 等待消息到达
                 self._coordinator.run_completion_loop()  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             )
 
@@ -785,6 +832,9 @@ class MultiProcessPipelineRunner:
                     pass
                 for group in wave:
                     if env_by_process is None:
+                        # NOTE 引擎启动，引擎启动虽然晚于 Coordinator.start(接收请求并发送给stage)
+                        #   但是此时 HTTP 服务还没有启动，所以还不会收到请求
+                        logger.info("启动阶段组，group_name=%s", group.group_name)
                         group.spawn(ctx)
                     else:
                         group.spawn(
@@ -808,7 +858,10 @@ class MultiProcessPipelineRunner:
             else:
                 pass
 
+            
             for group in self.groups:
+                logger.info("将stage注册到 coordinator 中，仅仅是保存stage name元数据到 coordinator中 \n%s",
+                    json.dumps({"group_name": group.group_name, "stage_names": list(group.stage_control_endpoints)}, ensure_ascii=False, indent=2))
                 for stage_name, endpoint in group.stage_control_endpoints.items():
                     self._coordinator.register_stage(
                         stage_name, endpoint

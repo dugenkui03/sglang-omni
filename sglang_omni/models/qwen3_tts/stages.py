@@ -187,6 +187,17 @@ def load_qwen3_tts_generate_defaults(checkpoint_dir: str) -> dict[str, JsonValue
     return data if isinstance(data, dict) else {}
 
 
+# NOTE stage 1，入口。注意，这里返回的是 ThreadedSimpleSchedulers，是用来进行消息流转的
+#
+#
+# class StageScheduler(Protocol):
+#     """Scheduler lifecycle and message queues consumed by a pipeline stage."""
+#
+#     @property
+#     def inbox(self) -> Queue[IncomingMessage]: ...
+#
+#     @property
+#     def outbox(self) -> Queue[OutgoingMessage]: ...
 def create_preprocessing_executor(
     model_path: str,
     *,
@@ -276,13 +287,14 @@ def load_standalone_preprocessing_context(
     )
 
 
+# NOTE stage 2
 def create_sglang_tts_engine_executor(
     model_path: str,
     *,
     device: str | None = None,
     gpu_id: int | None = None,
     dtype: str = "bfloat16",
-    attn_implementation: str | None = None,
+    attn_implementation: str | None = None, # 启动参数传递
     prefill_coalesce_requests: int = 0,
     prefill_coalesce_wait_ms: float = 60.0,
     server_args_overrides: Mapping[str, object] | None = None,
@@ -310,9 +322,11 @@ def create_sglang_tts_engine_executor(
     )
 
 
+# 兼容测试的配置，不用管
 create_tts_engine_executor = create_sglang_tts_engine_executor
 
 
+# NOTE stage 3
 def create_vocoder_executor(
     model_path: str,
     *,

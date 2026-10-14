@@ -2,6 +2,7 @@
 """Coordinator for managing the multi-stage pipeline."""
 
 import asyncio
+import json
 import logging
 import uuid
 from collections.abc import Callable, Sequence
@@ -120,10 +121,13 @@ class Coordinator(CoordinatorSessions):
             self.max_in_flight = value
 
         # Control plane
+        # NOTE 和stage通信的数据通道，powered by zmq
         self.control_plane = CoordinatorControlPlane(
             completion_endpoint=completion_endpoint,
             abort_endpoint=abort_endpoint,
         )
+        logger.info("CoordinatorControlPlane 初始化成功\n%s",
+            json.dumps({"completion_endpoint": completion_endpoint, "abort_endpoint": abort_endpoint}, ensure_ascii=False, indent=2))
 
         # Stage registry
         self.stages: dict[str, StageInfo] = {}
@@ -156,6 +160,8 @@ class Coordinator(CoordinatorSessions):
 
     async def start(self) -> None:
         """Start the coordinator."""
+        # NOTE 启动 Coordinator.start() -> CoordinatorControlPlane.start()
+        #   control_plane 维护和 stage 的数据通信
         await self.control_plane.start()
         self.running = True
         logger.info("Coordinator started")
@@ -467,8 +473,8 @@ class Coordinator(CoordinatorSessions):
 
     async def submit_request(
         self,
-        request_id: str,
-        request: object,
+        request_id: str, # 请求id
+        request: object, # 请求对象
         *,
         stream_queue: asyncio.Queue[CompleteMessage | StreamMessage] | None = None,
         target_stage: str | None = None,
@@ -476,7 +482,10 @@ class Coordinator(CoordinatorSessions):
         replica_bindings: dict[str, int] | None = None,
         should_bypass_admission: bool = False,
     ) -> None:
-        """Submit a request without waiting for completion."""
+        """Submit a request without waiting for completion.
+       
+        NOTE 普通链路，讲请求提交到 子进程 stage 处理
+        """
         if self.fatal_error is not None:
             raise RuntimeError(self.fatal_error)
         else:
@@ -533,9 +542,10 @@ class Coordinator(CoordinatorSessions):
         entry_info = self.stages[entry_instance]
 
         # Track request
+        # NOTE 保存请求ID及其对应的请求状态
         self.requests[request_id] = RequestInfo(
             request_id=request_id,
-            state=RequestState.PENDING,
+            state=RequestState.PENDING, # 请求状态：PENDING -> RUNNING -> COMPLETED/FAILED/ABORTED
             current_stage=self.entry_stage,
             terminal_stages=(
                 self.resolve_terminal_stages(request)
@@ -761,14 +771,21 @@ class Coordinator(CoordinatorSessions):
 
         This should be run as a background task.
         """
+        logger.info("监听接收阶段事件")
         try:
             while self.running:
                 msg = await self.control_plane.recv_event()
                 if isinstance(msg, StreamMessage):
+                    logger.info("收到流式请求消息，提交给 stage stream\n%s",
+                        json.dumps({"request_id": msg.request_id, "from_stage": msg.from_stage, "chunk_id": msg.chunk_id}, ensure_ascii=False, indent=2))
                     await self.handle_stream(msg)
                 elif isinstance(msg, AdminResultMessage):
+                    logger.info("收到管理消息\n%s",
+                        json.dumps({"op_id": msg.result.op_id, "stage": msg.result.stage, "success": msg.result.success}, ensure_ascii=False, indent=2))
                     self.handle_admin_result(msg.result)
                 else:
+                    logger.info("收到请求完成消息\n%s",
+                        json.dumps({"request_id": msg.request_id, "from_stage": msg.from_stage, "success": msg.success}, ensure_ascii=False, indent=2))
                     await self.handle_completion(msg)
         except asyncio.CancelledError:
             logger.info("Coordinator completion loop cancelled")

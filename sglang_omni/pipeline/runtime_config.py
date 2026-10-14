@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
@@ -79,9 +80,14 @@ class IpcRuntimeDir:
 
 @dataclass(frozen=True)
 class PipelineRuntimePrep:
-    """Prepared stage, endpoint, placement, and topology state."""
+    """Prepared stage, endpoint, placement, and topology state.
+        Prepared: made ready in advance for a later step
 
+       NOTE 这个是整个 pipeline 的配置
+    """
+    # stage 配置
     stages_cfg: list[StageConfig]
+    # NOTE 入口stage
     entry_stage: str
     endpoints: dict[str, str]
     placement_plan: StagePlacementPlan
@@ -126,6 +132,7 @@ def prepare_pipeline_runtime(
     ipc_runtime_dir: IpcRuntimeDir | None = None,
 ) -> PipelineRuntimePrep:
     """Compile the process topology, expand replicas, and allocate endpoints."""
+
     logical_plan, stages_cfg = compile_logical_processes(config)
     entry_stage = config.resolved_entry_stage
     stages_cfg, replica_topology = expand_replica_stages(stages_cfg, logical_plan)
@@ -159,7 +166,7 @@ def prepare_pipeline_runtime(
             pass
         raise
 
-    return PipelineRuntimePrep(
+    pipeline_runtime_prep = PipelineRuntimePrep(
         stages_cfg=stages_cfg,
         entry_stage=entry_stage,
         endpoints=endpoints,
@@ -170,7 +177,11 @@ def prepare_pipeline_runtime(
         replica_topology=replica_topology,
         logical_process_plan=logical_plan,
     )
-
+    runtime_fields = {"entry_stage": entry_stage,
+        "stage_names": [stage.name for stage in stages_cfg], "endpoints": endpoints}
+    logger.info("流水线运行布局 PipelineRuntimePrep\n%s",
+        json.dumps(runtime_fields, ensure_ascii=False, indent=2))
+    return pipeline_runtime_prep
 
 def build_comm_config(
     stage_cfg: StageConfig,

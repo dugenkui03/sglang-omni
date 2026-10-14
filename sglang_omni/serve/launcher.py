@@ -546,7 +546,7 @@ async def warm_up_server(
 async def run_server(
     pipeline_config: PipelineConfig,
     *,
-    host: str = "0.0.0.0",
+    host: str = "0.0.0.0", # 默认地址
     port: int = 8000,
     model_name: str | None = None,
     log_level: str = "info",
@@ -566,8 +566,12 @@ async def run_server(
     port = find_available_port(host, port)
 
     mp_runner = MultiProcessPipelineRunner(pipeline_config)
+    logger.info("初始化 MultiProcessPipelinelineRunner 成功，使用 pipeline/stages 等进行初始化")
     startup_timeout = float(os.environ.get("SGLANG_OMNI_STARTUP_TIMEOUT", "600"))
+    # NOTE 启动服务 MultiProcessPipelineRunner.start()
     await mp_runner.start(timeout=startup_timeout)
+    logger.info("启动 MultiProcessPipelinelineRunner 成功")
+    
     coordinator = mp_runner.coordinator
 
     # Plans are resolved once inside ``mp_runner.start()`` (which applies
@@ -659,6 +663,7 @@ async def run_server(
             host=host,
             port=port,
             log_level=log_level,
+            log_config=None,
             timeout_keep_alive=120,
         )
         server = PipelineUvicornServer(config)
@@ -794,6 +799,7 @@ def launch_server(
         cleanup succeeds, launch_server raises SIGTERM again for the previous handler.
         """
         nonlocal cleanup_failed
+        # NOTE 启动服务 run_server
         server_run = run_server(
             pipeline_config,
             host=host,

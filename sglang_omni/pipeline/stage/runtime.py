@@ -5,6 +5,30 @@ Handles: control plane messaging, data plane (relay) IO, input aggregation,
 stream chunk routing, abort tracking, profiling.
 
 Dispatches all compute to scheduler (OmniScheduler or SimpleScheduler).
+
+说明：Stage 只做通信与收发（输入输出外壳 IO shell），不做任何模型计算：
+- IO shell：包在调度器 (Scheduler) 外面的一层通信外壳。
+- 外壳包揽的职责：
+  1. 控制面消息 (control plane messaging)：通过 StageControlPlane (ZMQ) 收发控制指令。
+  2. 数据面读写 (data plane / relay IO)：从共享内存/GPU 显存池 (Relay/IPC) 读写张量载荷 (StagePayload)。
+  3. 多路输入汇聚 (input aggregation)：依赖多个上游 Stage 时，等待所有上游数据到齐再合并。
+  4. 流式块路由 (stream chunk routing)：按块转发流式生成的中间结果（如 Codec Tokens）。
+  5. 中止跟踪 (abort tracking)：监听 AbortMessage 并通知调度器取消对应请求。
+  6. 性能分析 (profiling)：开关 PyTorch Profiler。
+- 计算分发：真正耗时的计算（分词、模型前向、声码器解码）全部放入 self.scheduler.inbox，
+  交给内部的 Scheduler（如 OmniScheduler 或 SimpleScheduler）执行。
+
+┌────────────────────── Stage (IO Shell 通信外壳) ───────────────────────┐
+│  1. ZMQ 控制消息收发 (StageControlPlane)                                │
+│  2. 张量数据搬运 (CommEngine / Relay)                                   │
+│  3. 多路输入汇聚 (AggregatedInput) / 流式路由 / Abort / Profile           │
+│                          │                  ▲                          │
+│            放入 inbox     ▼                  │    从 outbox 取出         │
+│       ┌────────────────────────────────────────────────────────┐       │
+│       │    Scheduler (OmniScheduler / SimpleScheduler)         │       │
+│       │    负责真正的计算：分词 / 模型推理 / 声码器解码        │       │
+│       └────────────────────────────────────────────────────────┘       │
+└────────────────────────────────────────────────────────────────────────┘
 """
 
 from __future__ import annotations
@@ -237,10 +261,13 @@ class Stage:
             return
         else:
             pass
+        # CoordinatorControlPlane <-> StageControlPlane
         await self.control_plane.start()
+        # tp > 1时启动不同 rank 通信
         await self.comm.start()
         self.loop = asyncio.get_running_loop()
         self.running = True
+        logger.info("启动阶段(Stage)，已经是在子进程操作了\nstage_name=%s", self.name)
 
         # Start scheduler in dedicated thread
         if self.scheduler is not None:
@@ -269,6 +296,10 @@ class Stage:
                         self.scheduler.warm_up_serving_thread()
                     finally:
                         serving_thread_ready.set()
+                    # note 进入调度器的常驻死循环
+                    #   1. 不断从 scheduler.inbox 取出请求
+                    #   2. 调用该 Stage 绑定的计算函数或 ModelRunner 执行推理
+                    #   3. 再把结果塞进 scheduler.outbox
                     self.scheduler.start()
                 except Exception as exc:
                     logger.exception("Scheduler thread for stage %s crashed", self.name)

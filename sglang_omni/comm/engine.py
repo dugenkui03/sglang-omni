@@ -150,7 +150,10 @@ class CommEngine:
         self.closed = False
 
     async def start(self) -> None:
-        """Start this process's rank-local communication endpoint."""
+        """Start this process's rank-local communication endpoint.
+        
+            tp>1 的时候启动不同 rank 的通信
+        """
 
         if not self.rank_endpoints or self.rank_recv_socket is not None:
             return

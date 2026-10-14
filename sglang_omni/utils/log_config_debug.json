@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "detail": {
+      "()": "sglang_omni.utils.logging.DebugLogFormatter"
+    }
+  },
+  "handlers": {
+    "console": {
+      "class": "logging.StreamHandler",
+      "formatter": "detail",
+      "stream": "ext://sys.stderr"
+    }
+  },
+  "loggers": {
+    "uvicorn": {"handlers": [], "propagate": true},
+    "uvicorn.error": {"handlers": [], "propagate": true},
+    "uvicorn.access": {"handlers": [], "propagate": true}
+  },
+  "root": {
+    "level": "INFO",
+    "handlers": ["console"]
+  }
+}

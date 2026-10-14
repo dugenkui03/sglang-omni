@@ -42,8 +42,11 @@ class Qwen3TTSStageFactoryKwargs(TypedDict, total=False):
 
 
 class Qwen3TTSPipelineConfig(PipelineConfig):
-    """3-stage Qwen3-TTS pipeline: preprocessing -> engine -> vocoder."""
+    """3-stage Qwen3-TTS pipeline: preprocessing -> engine -> vocoder.
+        NOTE 每个模型都有自己的 pipeline、pipeline中每个 stage 处理不同的事情，pipeline在这里定义
+    """
 
+    # NOTE 对应的模型架构会使用这个类
     architecture: ClassVar[str] = "Qwen3TTSForConditionalGeneration"
     requires_model_capabilities: ClassVar[bool] = True
 
@@ -63,28 +66,32 @@ class Qwen3TTSPipelineConfig(PipelineConfig):
     # preprocessing and vocoder decoding and disables the vocoder CUDA graphs,
     # reducing throughput.
     enable_deterministic_inference: bool = False
+
+    # NOTE 字段定义竟然放到这里：preprocessing -> tts_engine -> vocoder
     stages: list[StageConfig] = [
         StageConfig(
             name="preprocessing",
             process="pipeline",
-            factory_path=f"{_PKG}.stages.create_preprocessing_executor",
+            factory_path=f"{_PKG}.stages.create_preprocessing_executor", # note 标识创建的工厂函数
             # Note (Jiaxin Deng): no gpu declaration here. Sharing the engine's
             # process the stage holds no GPU budget of its own, and declaring one
             # makes every layout that shares the card demand a fraction for it. A
             # split frontend passes --preprocessing.gpu with its own fraction.
-            next="tts_engine",
+            next="tts_engine", # note 标识下一个阶段
         ),
         # note(ratish): stages are built in list order. The vocoder comes before
         # the engine so its weights and graphs are resident when the KV pool is sized.
         StageConfig(
             name="vocoder",
-            process="pipeline",
+            process="pipeline", # 这个是 stage 所在的进程标识，标识一样说明在同一个进程；这个值可以被启动参数覆盖
             factory_path=f"{_PKG}.stages.create_vocoder_executor",
             factory=FactoryArgs(dtype="bfloat16"),
             gpu=0,
-            terminal=True,
+            terminal=True, # 标识是结束阶段
             can_accept_stream_before_payload=True,
+            # 没有next
         ),
+        # NOTE 放到 vocoder 后边是因为：先让 vocoder 的权重和 CUDA 图占用 GPU 显存(GPU memory)，tts_engine 再根据剩余显存确定 KV 缓存(KV cache)容量
         EngineStageConfig(
             name="tts_engine",
             process="pipeline",

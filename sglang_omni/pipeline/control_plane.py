@@ -98,7 +98,9 @@ class PushSocket:
             raise RuntimeError("Socket not connected")
         else:
             pass
+        # 序列话发送的消息
         data = serialize_message(msg)
+        # zmp 发送消息
         await self.socket.send(data)
         logger.debug("PUSH sent %s to %s", type(msg).__name__, self.endpoint)
 
@@ -125,7 +127,10 @@ async def send_to_endpoint(
 
 
 class PullSocket:
-    """Async PULL socket for receiving messages."""
+    """Async PULL socket for receiving messages.
+
+        Coordinator 通过 PullSocket 接收包含音频解码结果的完成消息。PullSocket 本身是通用的 ZeroMQ 消息接收组件
+    """
 
     def __init__(self, endpoint: str, bind: bool = True):
         self.endpoint = endpoint
@@ -141,6 +146,7 @@ class PullSocket:
             logger.debug("PULL socket bound to %s", self.endpoint)
         else:
             self.socket.connect(self.endpoint)
+            logger.info("开始监听 ZeroMQ\nendpoint=%s", self.endpoint)
             logger.debug("PULL socket connected to %s", self.endpoint)
 
     async def recv(self) -> ControlMessage:
@@ -264,6 +270,10 @@ class StageControlPlane:
     - Sending work to next stage (PUSH)
     - Receiving abort broadcasts (SUB)
     - Sending completion to coordinator (PUSH)
+    NOTE: Stage 也是通过 StageControlPlane 和 Coordinator 进行通信
+        Coordinator / Stage（业务编排与阶段外壳）
+        └─ CoordinatorControlPlane / StageControlPlane（通信控制面板）
+            └─ PushSocket / PullSocket / PubSocket / SubSocket（底层 ZMQ Socket 封装）
     """
 
     def __init__(
@@ -396,6 +406,8 @@ class CoordinatorControlPlane:
     - Submitting work to entry stage (PUSH)
     - Receiving completions from stages (PULL)
     - Broadcasting abort signals (PUB)
+
+    NOTE 如上所述，Coordinator 用来和 stage 通信的组件：ZMQ PUSH提交 / PULL收结果 / PUB广播Abort
     """
 
     def __init__(self, completion_endpoint: str, abort_endpoint: str):
@@ -406,7 +418,10 @@ class CoordinatorControlPlane:
         self.stage_sockets: dict[str, PushSocket] = {}
 
     async def start(self) -> None:
-        """Initialize all sockets."""
+        """Initialize all sockets.
+            初始化所有的通信socket
+        """
+
         self.completion_socket = PullSocket(self.completion_endpoint, bind=True)
         await self.completion_socket.start()
         self.abort_socket = PubSocket(self.abort_endpoint)
@@ -426,10 +441,13 @@ class CoordinatorControlPlane:
             self.stage_sockets[stage_name] = sock
         else:
             pass
+
         await self.stage_sockets[stage_name].send(msg)
 
     async def recv_event(self) -> CompleteMessage | StreamMessage | AdminResultMessage:
         """Receive completion or stream event from a stage."""
+
+        # NTOE 这里监听解码后的消息
         if self.completion_socket is None:
             raise RuntimeError("Control plane not started")
         else:

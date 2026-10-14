@@ -22,7 +22,7 @@ from sglang_omni.preprocessing.resource_connector import (
 )
 from sglang_omni.serve.protocol import DEFAULT_TTS_BATCH_MAX_ITEMS
 from sglang_omni.utils.gpu_compat import should_disable_custom_all_reduce_for_gpus
-from sglang_omni.utils.logging import configure_dependency_loggers
+from sglang_omni.utils.logging import configure_dependency_loggers, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -416,11 +416,10 @@ def serve(
     ``--thinker.engine.mem_fraction_static 0.6``,
     ``--vocoder.factory.max_concurrency 8``, ``--talker_ar.gpu 1``,
     ``--thinker.process thinker``.
+
+    NOTE：服务启动入口
     """
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    configure_logging(log_level.upper())
     configure_dependency_loggers()
 
     validate_colocate_cli_request(
@@ -435,6 +434,11 @@ def serve(
     )
     if config:
         try:
+            # 配置文件内容
+            #
+            # config_cls: Qwen3TTSPipelineConfig
+            # model_path: Qwen/Qwen3-TTS-12Hz-1.7B-Base
+            logger.info("读取服务配置文件\nconfig_path=%s", config)
             config_manager = ConfigManager.from_file(config)
         except (ConfigPathError, ValueError) as exc:
             # A file that does not parse, an unknown path in a stage entry,
@@ -459,6 +463,9 @@ def serve(
             pass
         config_manager = ConfigManager.from_model_path(model_path)
     pipeline_config_cls = type(config_manager.config)
+    logger.info("流水线(Pipeline)配置\nconfig=%s",
+        config_manager.config.model_dump_json(indent=2, serialize_as_any=True))
+        
     if pipeline_config_cls.is_realtime_only and not enable_realtime:
         raise typer.BadParameter(
             f"{pipeline_config_cls.__name__} serves only /v1/realtime. "
@@ -497,6 +504,9 @@ def serve(
             extra_args,
             extra_patches=flag_patches,
         )
+        # NOTE 这里已经获取 stages 的定义了，也包括识别了类似于 Qwen3TTSPipelineConfig 这样的入口类
+        logger.info("服务启动配置合并\n%s",
+            merged_config.model_dump_json(indent=2))
     except (ConfigPathError, ValueError) as exc:
         # Unknown path, unwritable path, two sources disagreeing at one
         # precedence, or a value the schema refuses. Every one of these
@@ -514,6 +524,8 @@ def serve(
     else:
         pass
 
+    # NOTE：服务启动
+    logger.info("启动服务，model_name=%s", model_name)
     launch_server(
         merged_config,
         host=host,

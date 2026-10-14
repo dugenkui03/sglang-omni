@@ -606,6 +606,7 @@ class PipelineConfig(BaseModel):
     audio_chunking: AudioChunkingConfig = Field(default_factory=AudioChunkingConfig)
     stages: list[StageConfig]
     name: str | None = None
+    # NOTE 可以指定 入口类
     entry_stage: str | None = None
     processes: dict[str, ProcessConfig] = Field(default_factory=dict)
     env_defaults: dict[str, str] = Field(default_factory=dict)
@@ -732,6 +733,8 @@ class PipelineConfig(BaseModel):
 
     @property
     def resolved_entry_stage(self) -> str:
+        # NOTE 这里的 entry_stage 即 Qwen3TTSPipelineConfig(PipelineConfig) 中对应的字段
+        #   如果要指定 entry stage 则使用这个字段
         if self.entry_stage is not None:
             return self.entry_stage
         else:

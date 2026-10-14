@@ -265,8 +265,10 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         forward_batch: ForwardBatch,
     ):
         qkv, _ = self.qkv_proj(hidden_states)
+        logger.info("注意力层 QKV 投影\nhidden_states.shape=%s, qkv.shape=%s", hidden_states.shape, qkv.shape)
 
         q, k, v = self.apply_qk_norm_rope(qkv, positions, forward_batch)
+        logger.info("完成 Q/K 归一化与旋转位置编码(RoPE)\nq.shape=%s, k.shape=%s, v.shape=%s", q.shape, k.shape, v.shape)
 
         inner_state = q, k, v, forward_batch
         return None, forward_batch, inner_state
@@ -369,6 +371,7 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
 
         must_save_kv = self.used_fused_qk_norm_rope_last_call
         save_kv_cache = must_save_kv or not self.used_fused_set_kv_buffer_last_call
+        # NOTE 就是计算 qk 权重、给v加权结算结果的那一套
         attn_output = self.attn(
             q,
             k,
@@ -376,6 +379,7 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
             fb,
             save_kv_cache=save_kv_cache,
         )
+        logger.info("完成注意力加权计算\nq.shape=%s, k.shape=%s, attn_output.shape=%s", q.shape, k.shape, attn_output.shape)
         # Note:(Chenchen Hong) cast attn output to the compute dtype (v.dtype),
         # not o_proj.weight.dtype: for FP8 weights the latter feeds an fp8
         # activation to the quantizer, which post1's sgl_kernel rejects.
@@ -384,6 +388,7 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         else:
             pass
         output, _ = self.o_proj(attn_output)
+        logger.info("完成注意力输出投影\nattn_output.shape=%s, output.shape=%s", attn_output.shape, output.shape)
         return output
 
     def forward(
@@ -392,6 +397,8 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
     ) -> torch.Tensor:
+        # 注意力机制实现
+        logger.info("开始 Transformer 注意力层计算")
         s = self.forward_prepare(
             positions=positions,
             hidden_states=hidden_states,

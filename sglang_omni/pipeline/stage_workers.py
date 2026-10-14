@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import json
 import logging
 import multiprocessing
 import os
@@ -45,7 +46,7 @@ from sglang_omni.utils.gpu_compat import (
 from sglang_omni.utils.gpu_memory import gpu_startup_lock
 from sglang_omni.utils.imports import import_string
 from sglang_omni.utils.ipc_weights import prepare_weight_share_process_compat
-from sglang_omni.utils.logging import configure_dependency_loggers
+from sglang_omni.utils.logging import configure_dependency_loggers, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +64,18 @@ class StageLaunchConfig:
     """
 
     # Identity
+    # note 阶段标识：preprocessing 表示预处理，tts_engine 表示生成引擎，vocoder 表示音频解码。
     stage_name: str
     role: Literal["single", "leader", "follower"] = "single"
     tp_rank: int = 0
     tp_size: int = 1
     placement_gpu_id: int | None = None
+    # 创建调度器前选择的 GPU；None 表示不主动切换设备。
     gpu_id: int | None = None
     nccl_port: int | None = None
 
     # Factory
+    # 工厂函数(Factory)的导入路径，决定创建哪种阶段调度器(Scheduler)。
     factory: str = ""
     # Constructor kwargs from PipelineConfig.stage_factory_kwargs (plus TP
     # wiring). Typed group kwargs are overlaid against the factory's
@@ -93,6 +97,7 @@ class StageLaunchConfig:
     enforce_total_reserve: bool = True
 
     # Routing: static next stage(s)
+    # 下游阶段名称，例如 preprocessing 处理完成后交给 tts_engine。
     next_stages: str | list[str] | None = None
     route_fn: str | None = None
     is_terminal: bool = False
@@ -107,6 +112,7 @@ class StageLaunchConfig:
     comm_config: dict[str, int | str | None] = field(default_factory=dict)
 
     # Endpoints
+    # 接收控制消息的通信地址，包括新请求的提交消息。
     recv_endpoint: str = ""
     coordinator_endpoint: str = ""
     abort_endpoint: str = ""
@@ -156,7 +162,23 @@ class StageLaunchConfig:
 
 @dataclass
 class StageWorkerProcessSpec:
-    """Everything one OS process needs to run one or more stages."""
+    """Everything one OS process needs to run one or more stages.
+
+    NOTE 这个类标识执行单元，串联起整个流程的 stage 使用这个类进行执行，process 和 Stage 是 1:n 的关系
+
+    ① 放在同一个进程
+    StageWorkerProcessSpec("pipeline")
+        ├─ preprocessing
+        ├─ tts_engine
+        └─ vocoder
+
+    ② 拆成两个进程
+    StageWorkerProcessSpec("frontend")
+        └─ preprocessing
+    StageWorkerProcessSpec("inference")
+        ├─ tts_engine
+        └─ vocoder
+    """
 
     process_name: str
     stage_specs: list[StageLaunchConfig]
@@ -369,15 +391,33 @@ class StageGroup:
         process_env_overrides: Mapping[str, Mapping[str, str]] | None = None,
     ) -> None:
         """Spawn the OS process(es) owned by this group."""
+
+        # NOTE 注意，这里遍历的 process配置，而非 stages
+        #   然后这个 process 中有什么 stages 会在 子进程函数 run_process 中遍历：for stage in stages
+        #       总体格式是  process_list[stage_list_a[a1,a2...], stage_list_b[b1,b2...]]
         for spec in self.process_specs:
-            event = ctx.Event()
+            # NOTE 这里的 event 主要是为了子进程启动成功之后在让主进程继续启动http服务
+            # 
+            # 主进程 (StageGroup)                               子进程 (stage_process_main)
+            # event = ctx.Event()  (初始 False)
+            #  ├─ 存入 self.ready_events
+            #  └─ args=(..., event, ...) ── proc.start() ──► 收到同一个底层共享的 ready_event
+            #                                                    │
+            # wait_ready()                                       ├─ construct_stage() (加载模型权重)
+            #  └─ while not event.is_set():                      ├─ await stage.start() (启动 ZMQ)
+            #      └─ event.wait(1.0) ◄════ 立即唤醒 ═════════════╪═ ready_event.set() (置为 True)
+            #          │                                         ▼
+            #          ▼                                     stage.run() (常驻处理请求)
+            #      继续往下启动 HTTP Server
+            event = ctx.Event() 
             startup_error_channel = ctx.Queue()
             proc_name = process_name(spec)
+            logger.info("创建进程，process_name=%s", proc_name)
             proc = ctx.Process(
-                target=stage_process_main,
-                args=(spec, event, startup_error_channel),
-                name=proc_name,
-                daemon=True,
+                target=stage_process_main, # 进程要执行的函数
+                args=(spec, event, startup_error_channel), # 进程使用的参数，event 也给到了子进程
+                name=proc_name, # 继承名称
+                daemon=True, # 主进程停止后子进程也停止
             )
             try:
                 extra_env = (
@@ -389,7 +429,9 @@ class StageGroup:
                     self._process_start_attempts.add(
                         spec.process_name
                     )  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+                    # NOTE 进程启动
                     proc.start()
+                    logger.info("进程启动成功，process_name=%s", proc_name)
             except Exception:
                 close_queue(startup_error_channel)
                 raise
@@ -398,6 +440,8 @@ class StageGroup:
             )  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             self.ready_events.append(event)
             self.startup_error_channels.append(startup_error_channel)
+        logger.info("所有进程创建成功\n%s",
+            json.dumps({"process_names": [p.name for p in self._processes]}, ensure_ascii=False, indent=2))
 
         logger.info(
             "StageGroup %s: spawned %d process(es) (pids=%s)",
@@ -530,7 +574,16 @@ def stage_process_main(
     ready_event: Event,
     startup_error_channel: Queue[str] | None = None,
 ) -> None:
-    """Subprocess entrypoint: construct stage(s) from *spec* and run them."""
+    """Subprocess entrypoint: construct stage(s) from *spec* and run them.
+    
+    NOTE spec 参数解释：保存了 stage 函数信息
+    spec: StageWorkerProcessSpec
+    └─ stage_specs: list[StageLaunchConfig]
+        └─ StageLaunchConfig
+            ├─ factory: str  ← 存 stages.py 里的工厂函数路径
+            │   (如 "sglang_omni.models.qwen3_tts.stages.create_sglang_tts_engine_executor")
+            └─ factory_kwargs / typed_kwargs ← 传给工厂函数的参数
+    """
     # note (Richard Wang): exit with the parent, so a killed server does not
     # leave its stage workers holding the GPUs. A parent that died before the
     # signal was registered sends none, so check it once registered.
@@ -540,16 +593,7 @@ def stage_process_main(
         raise SystemExit(1)
     else:
         pass
-    # note (Dayuxiaoshui): a spawned process starts with fresh logging, and
-    # importing sglang already installs a root handler at INFO, which turns
-    # basicConfig into a no-op. Set the level explicitly so the stage follows
-    # the launcher's --log-level.
-    logging.basicConfig(
-        level=spec.log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        stream=sys.stdout,
-    )
-    logging.getLogger().setLevel(spec.log_level)
+    configure_logging(spec.log_level)
     configure_dependency_loggers()
     if not spec.stage_specs:
         raise ValueError(f"Process {spec.process_name!r} requires at least one stage")
@@ -562,6 +606,7 @@ def stage_process_main(
             prepare_accelerator_environment(stage_spec, log)
         apply_gpu_compat_env_defaults()
         prepare_weight_share_process_compat()
+        # NOTE 启动进程，启动进程中会遍历 stage_specs 中的 stages 并启动
         run_process(spec, ready_event, log)
     except (KeyboardInterrupt, SystemExit):
         destroy_torch_distributed_process_group(log)
@@ -618,8 +663,14 @@ def run_process(
     async def _start_and_run() -> None:
         tasks: list[asyncio.Task[None]] = []
         try:
+            # NOTE
             for stage in stages:
                 await stage.start()
+            log.info(
+                "完成启动 process %s 中的 stages=%s",
+                spec.process_name,
+                [stage.name for stage in stages],
+            )
             log.info(
                 "Process %s ready with stages=%s",
                 spec.process_name,
@@ -765,10 +816,13 @@ def reclaim_process_gpu_memory(
 
 
 def construct_stage(
-    spec: StageLaunchConfig,
+    spec: StageLaunchConfig, # Stage 创建的对象
     log: logging.Logger,
     local_dispatcher: LocalStageDispatcher | None = None,
 ) -> Stage:
+    """
+        stage 创建核心方法
+    """
     gpu_id = spec.gpu_id
     if gpu_id is not None:
         current_platform.set_device(int(gpu_id))
