@@ -414,7 +414,7 @@ class StageGroup:
             proc_name = process_name(spec)
             logger.info("创建进程，process_name=%s", proc_name)
             proc = ctx.Process(
-                target=stage_process_main, # 进程要执行的函数
+                target=stage_process_main, # NOTE 进程要执行的函数
                 args=(spec, event, startup_error_channel), # 进程使用的参数，event 也给到了子进程
                 name=proc_name, # 继承名称
                 daemon=True, # 主进程停止后子进程也停止
@@ -663,7 +663,8 @@ def run_process(
     async def _start_and_run() -> None:
         tasks: list[asyncio.Task[None]] = []
         try:
-            # NOTE
+            # NOTE 启动 stage.scheduler() 中的 loop来接收消息、组批、请求下游
+            #   但是 stage 本身的数据链路还没有搭建、没开始接收上游请求/发送消息给 scheduler
             for stage in stages:
                 await stage.start()
             log.info(
@@ -677,6 +678,7 @@ def run_process(
                 [stage.name for stage in stages],
             )
             ready_event.set()
+            # NOTE 这里调用了 stage.run()
             tasks = [asyncio.create_task(stage.run()) for stage in stages]
             await asyncio.gather(*tasks)
         finally:

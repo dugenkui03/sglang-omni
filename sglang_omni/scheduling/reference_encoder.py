@@ -36,28 +36,37 @@ class ReferenceEncodeKey:
 
 
 class ReferenceEncodeHook(Generic[InputT, ArtifactT, StoredT, RawInputT]):
+    """ 可以直接看实现：Qwen3TTSAdhocReferenceHook  """
     def normalize_input(self, raw_input: RawInputT) -> InputT:
+        # 将原始输入规范化为编码器接受的数据结构。
         raise NotImplementedError
 
     def cache_key(self, item: InputT) -> ReferenceEncodeKey | None:
+        # 生成复用编码结果的缓存键，返回 None 表示不使用缓存。
         raise NotImplementedError
 
     def encode_one(self, item: InputT) -> ArtifactT:
+        # 编码单条参考输入并返回特征结果，具体计算由模型子类实现。
         raise NotImplementedError
 
     def store_artifact(self, artifact: ArtifactT) -> StoredT:
+        # 将编码结果转换为适合缓存存储的格式。
         raise NotImplementedError
 
     def load_artifact(self, stored: StoredT) -> ArtifactT:
+        # 将缓存中的数据恢复为调用方使用的编码结果。
         raise NotImplementedError
 
     def revalidate(self, item: InputT, key: ReferenceEncodeKey) -> bool:
+        # 复核当前输入与缓存键是否仍匹配，默认通过。
         return True
 
     def can_encode_batch(self) -> bool:
+        # 声明是否支持原生批量编码，默认不支持。
         return False
 
     def encode_batch(self, items: list[InputT]) -> list[ArtifactT]:
+        # 批量编码入口，默认逐条调用 encode_one。
         return [self.encode_one(item) for item in items]
 
 
@@ -82,6 +91,13 @@ class KeyedReferenceEncodeHook(
         return ""
 
     def cache_key(self, item: InputT) -> ReferenceEncodeKey | None:
+        """
+        qwen3-tts 链路 item 是 Qwen3TTSAdhocReferenceInput
+            class Qwen3TTSAdhocReferenceInput:
+                ref_audio: object # 参考声音
+                ref_text: str | None # 参考声音文本
+                x_vector_only_mode: bool
+        """
         input_key = self.input_key(item)
         if input_key is None:
             return None
@@ -134,10 +150,18 @@ def fresh_exception(exc: BaseException) -> BaseException:
 
 
 class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
+    """
+       NOTE 职责：缓存复用、相同请求合并和调用参考音频编码器
+
+       qwen3-tts 链路：
+            InputT: Qwen3TTSAdhocReferenceInput
+            StoreT: CachedVoicePrompt，缓存中的数据格式
+    """
     LOG_INTERVAL_S = 60.0
 
     def __init__(
         self,
+        # NOTE qwen3-tts 链路 hook 类型是 Qwen3TTSAdhocReferenceHook
         hook: ReferenceEncodeHook[InputT, ArtifactT, StoredT, RawInputT],
         *,
         max_items: int | None = 256,
@@ -221,6 +245,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
 
     def encode_leader(self, item: InputT) -> ArtifactT:
         if self.batch_queue is None:
+            # NOTE Qwen3TTSAdhocReferenceHook.encode_one() 进行speaker编码和语音编码
             return self._hook.encode_one(item)  # noqa: leading-underscore
         else:
             pass
@@ -344,9 +369,16 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
     def get_or_encode(
         self, raw_input: RawInputT, *, desc: str | None = None
     ) -> ArtifactT:
+        """
+            qwen3-tts 链路 hook 是 Qwen3TTSAdhocReferenceHook
+        """
+
+        # tip 获取克隆模式的 参考文本和参考音频
         item = self._hook.normalize_input(raw_input)  # noqa: leading-underscore
+
+        # 缓存对应的 key，包括 模型、调用参数等信息
         key = self._hook.cache_key(item)  # noqa: leading-underscore
-        if key is None:
+        if key is None: # 缓存key为null，不是缓存为null
             with self.lock:
                 self.uncacheable += 1
             try:
@@ -358,19 +390,25 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
                 raise
         else:
             pass
+
         cache_key = key.to_string()
         leader_fut: concurrent.futures.Future[StoredT] | None = None
         follower_fut: concurrent.futures.Future[StoredT] | None = None
         stored: StoredT | None = None
         with self.lock:
+            # 尝试获取缓存结果
             stored = self.cache.get(cache_key)
             if stored is not None:
-                self.hits += 1
+                # 命中缓存
+                self.hits += 1 
             elif cache_key in self.inflight:
+                # 正在处理，还没完成
                 self.merged += 1
                 follower_fut = self.inflight[cache_key]
             else:
+                # NOTE 没有命中缓存
                 self.misses += 1
+                # tip 将获取计算结果的 future 放进 self.inflight
                 leader_fut = concurrent.futures.Future()
                 self.inflight[cache_key] = leader_fut
         if stored is not None:
@@ -392,6 +430,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
             pass
         assert leader_fut is not None
         try:
+            # NOTE 开始编码，然后通过 encode_one 调用到 Qwen3TTSAdhocReferenceHook.encode_one() 的实现
             artifact = self.encode_leader(item)
             stored = self._hook.store_artifact(artifact)  # noqa: leading-underscore
             should_cache = self._hook.revalidate(item, key)  # noqa: leading-underscore

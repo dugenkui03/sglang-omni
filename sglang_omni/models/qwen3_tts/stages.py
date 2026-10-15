@@ -199,10 +199,10 @@ def load_qwen3_tts_generate_defaults(checkpoint_dir: str) -> dict[str, JsonValue
 #     @property
 #     def outbox(self) -> Queue[OutgoingMessage]: ...
 def create_preprocessing_executor(
-    model_path: str,
+    model_path: str, # 模型路径
     *,
-    max_concurrency: int = 8,
-    stream_codec_output: bool = True,
+    max_concurrency: int = 8, # preprocessing 阶段最大并发数，默认为1，启动参数可以覆盖
+    stream_codec_output: bool = True, # 启动参数或者 CLI 可覆盖默认值
     load_frontend: bool = False,
     device: str | None = None,
     gpu_id: int | None = None,
@@ -224,11 +224,15 @@ def create_preprocessing_executor(
     # the speech-tokenizer batcher would only ever see batches of one; the
     # default matches the batcher's max_batch_size.
     return ThreadedSimpleScheduler(
+        # NOTE 第一个参数是计算函数
+        #   functools.partial 主要是给后续调用 preprocess_qwen3_tts_payload 的时候给这个函数的参数 preprocess_qwen3_tts_payload 预先赋值 stream_codec_output
         functools.partial(
             preprocess_qwen3_tts_payload,
             default_stream_codec_output=stream_codec_output,
         ),
+        # 最大并发数
         max_concurrency=max_concurrency,
+        # abort函数
         abort_callback=cleanup_prepared_qwen3_tts_request,
     )
 

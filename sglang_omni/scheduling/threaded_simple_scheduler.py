@@ -92,11 +92,14 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
         abort_callback: Callable[[str], None] | None = None,
     ):
         self.lock = threading.Lock()
+        # 输入输出
         self.inbox: CountingInbox = CountingInbox()
         self.outbox: _queue_mod.Queue[OutgoingMessage] = _queue_mod.Queue()
         self.requires_tp_work_fanout: bool = True
+        # 计算函数
         self.fn = compute_fn
         self.max_concurrency = max(int(max_concurrency), 1)
+        # 最大并发
         self.executor = ThreadPoolExecutor(max_workers=self.max_concurrency)
         self.pending: dict[str, Future] = {}
         self.queued_aborts: set[str] = set()

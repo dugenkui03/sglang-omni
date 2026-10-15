@@ -120,6 +120,7 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
     then one captured encode per bucket length, eager past the largest bucket."""
 
     def __init__(self, encoder: torch.nn.Module, *, sample_rate: int) -> None:
+        # NOTE encode 类型参考 Qwen3TTSTalker.__init__()，是 Qwen3TTSSpeakerEncoder（外部引用类）
         self.encoder = encoder
         self.mel_basis = torch.from_numpy(
             librosa_mel_fn(
@@ -144,7 +145,16 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
         self.misses = 0
 
     def mel(self, waveform: torch.Tensor) -> torch.Tensor:
-        """Log mel (1, mels, frames) of a CPU waveform (1, samples)."""
+        """Log mel (1, mels, frames) of a CPU waveform (1, samples).
+        
+           将 waveform 转换成 对数梅尔频谱(Log-Mel Spectrogram)，这里没有调用模型/权重，这是个特定算法、其他模型 waveform -> log-mel 也是这些代码
+
+           结果形状参考
+            [1, 128, time_frames]
+            │   │    └─ 时间帧：time_frames 个分析窗口
+            │   └────── 梅尔频带(Mel Frequency Band)：每个窗口有 128 个频带数值  NOTE 这里可以和 声音编码做个类比，声音编码是一帧用 16 个 codebook 编号表示，这里使用 128维的 mel frequency brand 表示
+            └────────── 批次：1 段音频
+        """
         padding = (SPEAKER_MEL_N_FFT - SPEAKER_MEL_HOP) // 2
         spectrum = torch.stft(
             F.pad(waveform, (padding, padding), mode="reflect"),
@@ -230,8 +240,22 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
         logger.info(f"Qwen3-TTS speaker encoder graphs captured for {buckets} frames")
 
     def embed(self, waveform: np.ndarray) -> torch.Tensor:
-        """Speaker embedding (enc_dim,) of a waveform at the encoder's sample rate."""
+        """Speaker embedding (enc_dim,) of a waveform at the encoder's sample rate.
+        
+           NOTE 重要，获取 waveform 对应的 speaker embedding，分为2步：
+            1. mel()：波形 → 对数梅尔频谱
+            2. speaker_embedding：[2048]
+        """
+
+        # 将 waveform 转换成 log-mel 编码
+        # tip
+        #    结果形状参考
+        #     [1, 128, time_frames]
+        #     │   │    └─ 时间帧：time_frames 个分析窗口
+        #     │   └────── 梅尔频带(Mel Frequency Band)：每个窗口有 128 个频带数值  NOTE 这里可以和 声音编码做个类比，声音编码是一帧用 16 个 codebook 编号表示，这里使用 128维的 mel frequency brand 表示
+        #     └────────── 批次：1 段音频
         mels = self.mel(torch.from_numpy(waveform).unsqueeze(0))
+        # NOTE 帧数量是按照 帧步长约 10.67ms（256÷24000） 来计算的（这里的帧不是声音编码的 tokenizer 的帧
         frames = mels.shape[2]
         assert frames > max(self.pads)
         param = next(self.encoder.parameters())
@@ -239,6 +263,7 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
         bucket = smallest_bucket(frames, self.graphs)
         if bucket is None:
             self.misses += 1
+            # NOTE 普通链路执行
             return self.encoder(mels.transpose(1, 2))[0]
         else:
             pass
@@ -248,6 +273,7 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
         with self.lock:
             captured.static_mels[:, :, :frames].copy_(mels)
             captured.static_frames.fill_(frames)
+            # tip CUDA Graph 执行链路
             captured.graph.replay()
             self.replays += 1
             return captured.static_embedding.clone()

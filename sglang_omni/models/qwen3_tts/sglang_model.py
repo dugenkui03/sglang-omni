@@ -541,6 +541,9 @@ class Qwen3TTSPromptBuilderMixin:
 
     @torch.inference_mode()
     def extract_speaker_embedding(self, audio, sr):
+        """
+            sr 即 sample rate
+        """
         if sr != self.speaker_encoder_sample_rate:
             raise ValueError(
                 f"Expected {self.speaker_encoder_sample_rate}Hz reference audio"
@@ -551,6 +554,10 @@ class Qwen3TTSPromptBuilderMixin:
             raise RuntimeError("Qwen3-TTS speaker encoder is not loaded")
         else:
             pass
+        # note speaker 编码
+        # 
+        # speaker_encoder_graph_runner 是 Qwen3TTSSpeakerEncoderCudaGraphRunner 类型，其中的 speaker_encoder 是 Qwen3TTSSpeakerEncoder 类型
+        # 返回结果形状是 [2048]
         return self.speaker_encoder_graph_runner.embed(audio)
 
     @torch.inference_mode()
@@ -747,14 +754,29 @@ class Qwen3TTSPromptBuilderMixin:
     def build_voice_clone_inputs(
         self,
         *,
-        input_id: torch.Tensor,
-        ref_id: torch.Tensor | None,
-        voice_clone_prompt: VoicePrompt,
-        language: str,
-        non_streaming_mode: bool,
-        prompt_constants: Qwen3TTSPromptConstants,
-        instruct_id: torch.Tensor | None = None,
+        input_id: torch.Tensor,  # 目标文本的 token IDs，shape=[1,target_text_sequence_length]，包含模板标记
+        ref_id: torch.Tensor | None,  # 参考文本的 token IDs，shape=[1,reference_text_sequence_length]；ICL 克隆时必需
+        voice_clone_prompt: VoicePrompt,  # speaker 音色向量、参考音频整数编码
+        language: str,  # 目标语音的语言，用于选择语言标记
+        non_streaming_mode: bool,  # True：完整文本放入提示；False：按流式方式组织文本
+        prompt_constants: Qwen3TTSPromptConstants,  # 预计算的语言、起止及填充标记向量
+        instruct_id: torch.Tensor | None = None,  # 可选风格指令的 token IDs
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """组装音色克隆的模型输入，音色向量已包含在首次输入中。
+
+        Returns:
+            talker_input_embed:
+                [batch_size, text_speaker_audio_sequence_length, hidden_size]，
+                批次大小 × 首次组装的文本、音色、音频及特殊标记序列长度 × 向量维度。
+            attention_mask: [batch_size, text_speaker_audio_sequence_length]，
+                批次大小 × 首次输入序列长度；整数掩码标记有效位置。
+            trailing_text_hidden: [batch_size, remaining_text_sequence_length, hidden_size]，
+                批次大小 × 后续文本序列长度 × 向量维度；无剩余文本时长度为 1，存放填充向量。
+            ref_code: [reference_audio_frame_count, num_code_groups]，
+                参考音频帧数 × 每帧码本数量；整数编码，仅音色模式为 None。
+
+        batch_size=1；当前 1.7B 模型 hidden_size=2048、num_code_groups=16。
+        """
         voice_clone_spk_embeds = self.generate_speaker_prompt(voice_clone_prompt)
         speaker_embed = voice_clone_spk_embeds[0]
 
@@ -1017,11 +1039,13 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             apply_qwen_tts_transformers_compatibility_patches()
             from qwen_tts.core.models.modeling_qwen3_tts import Qwen3TTSSpeakerEncoder
 
+            # NOTE speaker 编码器类型（输入 log-mel，输出 speaker embedding)
             self.speaker_encoder = Qwen3TTSSpeakerEncoder(
                 root_config.speaker_encoder_config
             )
             self.speaker_encoder_graph_runner = Qwen3TTSSpeakerEncoderCudaGraphRunner(
-                self.speaker_encoder, sample_rate=self.speaker_encoder_sample_rate
+                self.speaker_encoder, 
+                sample_rate=self.speaker_encoder_sample_rate
             )
         else:
             self.speaker_encoder = None

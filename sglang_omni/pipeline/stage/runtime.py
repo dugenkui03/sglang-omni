@@ -157,11 +157,13 @@ class Stage:
     ) -> None:
         self.name = name
         self.role = role
+        # 当前 stage 的下一个 stage
         self.get_next = get_next
         self.gpu_id = gpu_id
         self.endpoints = endpoints
         self.control_plane = control_plane
         self.input_handler = input_handler or DirectInput()
+        # NOTE 包括具体推理动作的 StageScheduler(SimpleSchaduler, OmniScheduler)
         self.scheduler = scheduler
         self.project_payload = project_payload or {}
         self.stream_targets = stream_targets or []
@@ -404,9 +406,10 @@ class Stage:
             pass
 
     async def run(self) -> None:
-        await self.start()
+        await self.start() # Stage 已经 running 会立即返回
 
-        abort_task = asyncio.create_task(self.abort_listener())
+        abort_task = asyncio.create_task(self.abort_listener()) # SUB 中止广播 (AbortMessage) → 调 scheduler.abort()
+        # NOTE 循环从 scheduler.outbox 取计算结果 → 发往下游 Stage 或 Coordinator
         outbox_task = asyncio.create_task(self.drain_outbox())
         abort_task.add_done_callback(
             lambda task: self.on_background_task_done(task, "abort listener")
@@ -417,6 +420,7 @@ class Stage:
 
         try:
             while self.running:
+                # NOTE 接收 上游Stage/Coordinator 消息
                 msg = await self.control_plane.recv()
                 if (
                     self.role == "leader"
@@ -1295,6 +1299,7 @@ class Stage:
 
     async def drain_outbox(self) -> None:
         if self.owns_external_io:
+            # NOTE 这个里边有数据传递
             await self.drain_outbox_external()
         else:
             await self.drain_outbox_follower()
@@ -1302,13 +1307,16 @@ class Stage:
     async def drain_outbox_external(self) -> None:
         """Drain scheduler outbox and route results downstream."""
         loop = asyncio.get_running_loop()
+        # NOTE stage.scheduler.outbox 中的结果
         outbox = self.scheduler.outbox
         while self.running or not outbox.empty():
             try:
+                # NOTE 读取结果
                 out = await loop.run_in_executor(None, lambda: outbox.get(timeout=0.1))
             except _queue_mod.Empty:
                 continue
 
+            # 这里是保存 已经获取的、要给到下游的消息？
             stream_run: list[OutgoingMessage] = []
             for batch_index in range(_OUTBOX_DRAIN_BATCH_SIZE):
                 if out.type == "stream" and out.target is not None:
@@ -1335,6 +1343,7 @@ class Stage:
                             self.discard_kv_transfer(out.data)
                     elif out.request_id in self.active_requests:
                         if out.type == "result":
+                            # NOTE 将结果传递到下游
                             await self.route_result(out.request_id, out.data)
                         elif out.type == "stream":
                             if self.stream_targets:
@@ -1531,7 +1540,10 @@ class Stage:
         request_id: str,
         result: object,
     ) -> None:
-        """Route a completed result to next stage(s) or complete at coordinator."""
+        """Route a completed result to next stage(s) or complete at coordinator.
+        
+           NOTE 将结果传递给下一个 Stage 或者这本身就是 最后一个 stage 则将结果给到 Coordinator
+        """
         if not self.owns_external_io:
             self.clear_request_state(request_id)
             return
@@ -1605,10 +1617,12 @@ class Stage:
                 is_done=True,
             )
 
+        # NOTE 获取当前 stage 的下一个stage
         next_stages = (
             self.get_next(request_id, result) if session_operation is None else actual
         )
         if next_stages is None:
+            # NOTE 最终阶段，给到结果 coordinator
             # Terminal: notify coordinator
             _emit_event(
                 request_id=request_id,
@@ -1616,6 +1630,7 @@ class Stage:
                 event_name="stage_complete",
                 metadata={"terminal": True},
             )
+            # NOTE 发送消息给到 coordinator
             await self.control_plane.send_complete(
                 CompleteMessage(
                     request_id=request_id,
@@ -1636,6 +1651,7 @@ class Stage:
                 event_name="stage_complete",
                 metadata={"terminal": False, "next": list(next_stages)},
             )
+            # 发送消息给到后边的 stage
             for target in next_stages:
                 await self.send_to_stage(
                     request_id,
@@ -2293,8 +2309,12 @@ class Stage:
         self.control_plane.close()
 
     async def abort_listener(self) -> None:
+        """
+        监听终止消息
+        """
         try:
             while self.running:
+                # 获取终止消息
                 abort_msg = await self.control_plane.recv_abort()
                 if self.role == "leader" and self.tp_fanout is not None:
                     await self.tp_fanout.fanout_abort(abort_msg)

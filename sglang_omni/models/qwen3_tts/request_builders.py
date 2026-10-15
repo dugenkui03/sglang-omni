@@ -346,9 +346,16 @@ def cleanup_prepared_qwen3_tts_request(request_id: str) -> None:
 def build_qwen3_tts_state(
     payload: StagePayload, *, default_stream_codec_output: bool = True
 ) -> Qwen3TTSState:
+    """
+       从上游请求 解析 qwen tts 请求参数
+    """
+
     inputs = payload.request.inputs or {}
     params = payload.request.params or {}
     metadata = payload.request.metadata or {}
+    logger.info("tts 请求全部参数：\n 输入%s\n, 输入参数:%s\n, 请求元数据:%s\n",
+        json.dumps(inputs, ensure_ascii=False), json.dumps(params, ensure_ascii=False), json.dumps(metadata, ensure_ascii=False))
+
     tts_params = metadata.get("tts_params")
     if not isinstance(tts_params, dict):
         tts_params = {}
@@ -363,13 +370,30 @@ def build_qwen3_tts_state(
     else:
         pass
 
+    # TIP
+    #
+    # {
+    #     "text": "How are you today?",       # 本次要合成的目标文本
+    #     "references": [
+    #         {
+    #             "audio_path": "reference.wav",  # 用于克隆音色的参考音频
+    #             "text": "你好，很高兴认识你。"     # 参考音频里实际说的内容
+    #         }
+    #     ]
+    # }
     text, references = normalize_qwen3_tts_inputs(inputs)
+    logger.info("获取 tts 输入，tts 文本：%s, 参考信息：%s", text, json.dumps(references, ensure_ascii=False))
+
+    # tip 判断请求是否有 克隆 tts 需要的 ref_audio 和 red_text
     has_reference = has_voice_clone_reference(references, tts_params)
+
     task_type_raw = tts_params.get("task_type") or params.get("task_type")
     task_type_explicit = task_type_raw is not None and str(task_type_raw).strip() != ""
+
     task_type = normalize_qwen3_tts_task_type(
         task_type_raw, has_reference=has_reference
     )
+
     language = normalize_language(tts_params.get("language") or params.get("language"))
     instructions = resolve_optional_text(
         tts_params.get("instructions")
@@ -469,14 +493,14 @@ def build_qwen3_tts_state(
     )
 
     return Qwen3TTSState(
-        text=text,
-        task_type=task_type,
+        text=text, # 要 tts 的文本
+        task_type=task_type, # 任务类型，包括：Base-有克隆的tts；CustomVoice-内置音色tts；VoiceDesign-自定义音色tts
         task_type_explicit=task_type_explicit,
-        language=language,
-        voice=voice,
-        instructions=instructions,
-        ref_audio=ref_audio,
-        ref_text=ref_text,
+        language=language, # 目标语言
+        voice=voice, # 内置音色信息
+        instructions=instructions, # VoiceDesign 使用
+        ref_audio=ref_audio, # 克隆音频
+        ref_text=ref_text, # 克隆音频对应的文本
         uploaded_voice_name=resolve_optional_text(
             tts_params.get("uploaded_voice_name")
         ),
@@ -545,6 +569,9 @@ def has_voice_clone_reference(
     references: list[dict[str, object]],
     tts_params: dict[str, object],
 ) -> bool:
+    """
+      note 判断请求是否有 克隆 tts 需要的 ref_audio 和 red_text
+    """
     if references_contain_audio(references) or references_contain_text(references):
         return True
     else:
@@ -916,8 +943,8 @@ def qwen3_tts_voice_prompt_from_cache(
 
 @dataclass(frozen=True)
 class Qwen3TTSAdhocReferenceInput:
-    ref_audio: object
-    ref_text: str | None
+    ref_audio: object # 参考声音
+    ref_text: str | None # 参考声音文本
     x_vector_only_mode: bool
 
 
@@ -943,6 +970,11 @@ def record_ref_code_consumer_stream(ref_code: torch.Tensor) -> torch.Tensor:
 
 
 class Qwen3TTSRefCodeBatcher:
+    """
+        主要用来对声音编码
+            输入：
+            输出：
+    """
     def __init__(
         self,
         speech_tokenizer: Qwen3TTSTokenizer,
@@ -1058,12 +1090,27 @@ class Qwen3TTSRefCodeBatcher:
     def encode_waveform(
         self, waveform: str | npt.NDArray[np.generic], sample_rate: int
     ) -> torch.Tensor:
-        """Codes (frames, quantizers) of one reference, frames = ceil(samples / hop)."""
+        """Codes (frames, quantizers) of one reference, frames = ceil(samples / hop).
+           NOTE 对声音进编码
+
+           返回结果说明
+                1. 返回结果形状是 [音频帧数, 16 个 Codebook 编号]，在 【speech_tokenizer/config.json/"encoder_config": { "_frame_rate": 12.5,】配置正可以看到1s是12.5帧、即80ms一帧
+                2. Codebook 类似于 tokenizer embedding 表，是个 二维向量表，可以通过码本编号获取对应码本的向量。codebook shape 是【speech_tokenizer/config.json/"codebook_dim": 256, "codebook_size": 2048】
+                综上，返回结果可以进一步转换成 [音频帧数， 16， codebook 向量维度]
+        """
+
+        # NOTE 输入数据规范化
+        #
+        # 多声道 -> 单声道; sample_rate 对齐 24kHz，所以采样个数可能会变
+        # 输出是 [waveform] 对应的处理结果、类型是 np.ndarray(CPU 中的 tensor)，所以只看对一个元素就行
         audio = self.speech_tokenizer._normalize_audio_inputs(  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             [waveform], sr=sample_rate
         )
-        samples = torch.from_numpy(audio[0])
+        samples = torch.from_numpy(audio[0]) # 因为 _normalize_audio_inputs 输入只有一个元素，所以这里只获取第一个结果
+        logger.info(f"声音波形规范化处理：输入形状{waveform.shape}，输入采样率{sample_rate}，输出形状:{samples.shape}")
+
         if self.graph_runner is not None:
+            # CUDA Graph 链路
             codes = self.graph_runner.encode(samples)
             if codes is not None:
                 return codes
@@ -1075,14 +1122,37 @@ class Qwen3TTSRefCodeBatcher:
         # note(ratish): whole frames, so every conv layer's own tail padding is
         # zero and the eager encode has the shape the graphs capture.
         values = torch.zeros(
-            (1, 1, frames * self.hop),
+            (1, 1, frames * self.hop), # 初始化的tensor形状，对应 [批次大小, 声道数, 采样点数]
             device=self.encoder_device,
             dtype=self.encoder_dtype,
         )
+        # tip 将数据从 samples 拷贝到 values 指定区域
         values[0, 0, : samples.numel()].copy_(samples)
+
+        # NOTE 编码，获取 [批次大小=1, 码本数=16, 音频帧数] 形状的声音编码结果，编码结果类型是 codebook（codebook 中每个向量都代表一种发声方式)
         codes = self.encoder.encode(
-            values, num_quantizers=self.num_quantizers, return_dict=True
+            values, 
+            num_quantizers=self.num_quantizers,  # 一帧音频的 codebook 数量，目前是 16 
+            return_dict=True
         ).audio_codes
+
+        # 返回 [音频帧数， 16] 形状的结果
+        #
+        # [0, :, :frames] 是获取 [码本数=16, 音频帧数] 形状的结果，因为批次为1
+        #
+        # .transpose(0, 1)：交换第 0、1 个维度，也就是交换行和列
+        # 转置前：[码本数=2, 帧数=3]
+        # [
+        #     [10, 11, 12],  # 码本 0 在三帧中的编号
+        #     [20, 21, 22],  # 码本 1 在三帧中的编号
+        # ]
+        #
+        # # transpose(0, 1) 后：[帧数=3, 码本数=2]
+        # [
+        #     [10, 20],      # 第 0 帧
+        #     [11, 21],      # 第 1 帧
+        #     [12, 22],      # 第 2 帧
+        # ]
         return codes[0, :, :frames].transpose(0, 1)
 
     def run(self) -> None:
@@ -1127,6 +1197,9 @@ class Qwen3TTSAdhocReferenceHook(
         CachedVoicePrompt,
     ]
 ):
+    """
+       NOTE 集成关系 Qwen3TTSAdhocReferenceHook -> KeyedReferenceEncodeHook -> ReferenceEncodeHook
+    """
     model_id = "qwen3_tts"
     encoder_id = "qwen3_tts_voice_clone_prompt"
     artifact_kind = "qwen3_tts_voice_clone_prompt_adhoc"
@@ -1148,6 +1221,9 @@ class Qwen3TTSAdhocReferenceHook(
         self.encoder_config_hash = qwen3_tts_encoder_config_hash(model, wrapper)
 
     def normalize_input(self, raw_input: object) -> Qwen3TTSAdhocReferenceInput:
+        """
+          获取克隆模式的 参考文本和参考音频
+        """
         if isinstance(raw_input, Qwen3TTSAdhocReferenceInput):
             return raw_input
         else:
@@ -1166,6 +1242,11 @@ class Qwen3TTSAdhocReferenceHook(
         self.ref_code_batcher.close()
 
     def input_key(self, item: Qwen3TTSAdhocReferenceInput) -> str | None:
+        """ 
+           获取缓存的可以，信息包括：模型版本、编码器配置、参考文本和 x_vector_only_mode 等，避免误用不同模式的结果
+           
+           缓存内容为 CachedVoicePrompt，主要是 speaker 编码信息和音色编码信息
+        """
         return qwen3_tts_ref_audio_input_key(item.ref_audio)
 
     def options_key(self, item: Qwen3TTSAdhocReferenceInput) -> str:
@@ -1181,25 +1262,50 @@ class Qwen3TTSAdhocReferenceHook(
     def encode_one(
         self, item: Qwen3TTSAdhocReferenceInput
     ) -> tuple[VoicePrompt, str | None]:
+        """
+           NOTE 进行 语音编码 和 speaker 编码
+        """
         if not item.x_vector_only_mode and not item.ref_text:
             raise ValueError(
                 "ref_text is required when x_vector_only_mode=False (ICL mode)"
             )
         else:
             pass
+
         with torch.no_grad():
+            # tip 获取声音波形
+            #
+            # 输入数据：音频文件
+            #     ↓ 解码动作：librosa.load() / sf.read()
+            # 输出数据：waveform（波形数组）+ sample_rate（采样率）
+            # 
+            # wrapper 是个外部组件，执行了很原子的操作：将输入音频转换成 波形数组和对应的采样率
+            #   输入是声音列表，输出是也是列表 list[tuple[np.ndarray, int]] 、每个元素是声音对应的 (波形数组, 采样率)
             normalized = self.wrapper._normalize_audio_inputs(
-                [item.ref_audio]
+                [item.ref_audio] # NOTE 参考音频
             )  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+
             if len(normalized) != 1:
                 raise ValueError("Qwen3-TTS expects exactly one reference audio")
             else:
+                logger.info("参考音频解码完成\n"
+                            f"waveform_shape={normalized[0][0].shape}, waveform_first5={normalized[0][0][:5].tolist()},\n sample_rate_hz={normalized[0][1]}")
                 pass
+
+            # NOTE step 1: 获取波形数组和采样率
+            #  
+            #  示例（2s音频）
+            #       waveform_shape=(48000,), waveform_first5=[0.01, 0.02, -0.01, 0.0, 0.03], sample_rate_hz=24000
             waveform, sample_rate = normalized[0]
             # note(ratish): the codes are only consumed in ICL mode, so x vector
             # mode runs the speaker encoder alone.
             ref_code_future = None
             if not item.x_vector_only_mode:
+                 # 如果只是编码 speaker：x_vector_only_mode 则只获取音色信息，但是如果为false则声音的发生方式也会模仿
+                 # 这里不是 only mode
+                 # NOTE step 2: 获取 声音编码信息，结果是形状为 [声音帧数, 16(每帧16 个 codebook码本编号)]类型是 codebook 的 张量
+                 # 
+                 # 这里是 声音编码（对应 speaker 编码），调用到 Qwen3TTSRefCodeBatcher.submit()
                 ref_code_future = self.ref_code_batcher.submit(waveform, sample_rate)
             else:
                 pass
@@ -1207,17 +1313,21 @@ class Qwen3TTSAdhocReferenceHook(
             speaker_sample_rate = self.model.speaker_encoder_sample_rate
             if sample_rate != speaker_sample_rate:
                 import librosa
-
                 speaker_waveform = librosa.resample(
-                    y=speaker_waveform.astype("float32"),
+                    y=speaker_waveform.astype("float32"), # 声音波形
                     orig_sr=int(sample_rate),
                     target_sr=speaker_sample_rate,
                 )
             else:
                 pass
+            # NOTE step 3 获取 speaker 向量信息
+            #   结果是 [2048] 一维向量，元素类型是 torch.bfloat16
+            #  
+            # self.model 是 PromptModel（ Qwen3TTSTalker | Qwen3TTSPromptFrontend），
+            #    在这里是 Qwen3TTSTalker，extract_speaker_embedding 在父类 Qwen3TTSPromptBuilderMixin 中定义
             speaker_embedding = self.model.extract_speaker_embedding(
-                audio=speaker_waveform,
-                sr=speaker_sample_rate,
+                audio=speaker_waveform, # 声音波形
+                sr=speaker_sample_rate, # 采样率
             )
             ref_code = (
                 record_ref_code_consumer_stream(ref_code_future.result(timeout=130.0))
@@ -1412,12 +1522,16 @@ def validate_qwen3_tts_model_task(model: PromptModel, state: Qwen3TTSState) -> N
 
 def prepare_qwen3_tts_base_request(
     *,
-    state: Qwen3TTSState,
+    state: Qwen3TTSState, # NOTE 核心请求参数
     model: PromptModel,
     wrapper: Qwen3TTSModel,
     prompt_constants: Qwen3TTSPromptConstants,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """
+       NOTE 克隆 TTS 链路
+    """
     speaker_cache = get_speaker_artifact_cache()
+    # tip 这个是指 clone tts 链路可以给 音色指定 name
     cache_key = qwen3_tts_uploaded_voice_cache_key(state)
     cached_artifact = speaker_cache.get(cache_key) if cache_key is not None else None
     cached_prompt = (
@@ -1428,7 +1542,11 @@ def prepare_qwen3_tts_base_request(
     if cached_prompt is not None:
         voice_clone_prompt, ref_text = cached_prompt
     elif cache_key is None:
+
         reference_service = get_qwen3_tts_adhoc_reference_service(model, wrapper)
+
+        # NOTE 对声音：抓换成 waveform，然后进行 speaker 编码和 声音编码
+        #   reference_service 类型是 ReferenceEncodeService
         voice_clone_prompt, ref_text = reference_service.get_or_encode(
             state,
             desc="Qwen3-TTS ad-hoc reference",
@@ -1448,6 +1566,7 @@ def prepare_qwen3_tts_base_request(
         0
     ]  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
     ref_id = (
+        # NOTE 这里是对文本的 token 化
         wrapper._tokenize_texts([wrapper._build_ref_text(ref_text)])[
             0
         ]  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
@@ -1456,9 +1575,13 @@ def prepare_qwen3_tts_base_request(
     )
     instruct_id = build_instruct_id(wrapper, state.instructions)
     with torch.no_grad():
+        # tip 这里还调用了一个 build_voice_clone_inputs 方法，见 Qwen3TTSPromptBuilderMixin
         return model.build_voice_clone_inputs(
-            input_id=input_id,
+            input_id=input_id, # NOTE tokenizer 的文本
             ref_id=ref_id,
+            # NOTE 包括编号后的
+            #  speaker 特征：[2048] embedding
+            #  声音特征 [时间帧数量， 16 个codebook编号]
             voice_clone_prompt=voice_clone_prompt,
             language=state.language,
             non_streaming_mode=state.non_streaming_mode,
@@ -1514,7 +1637,7 @@ def prepare_qwen3_tts_voice_design_request(
 
 
 def prepare_qwen3_tts_request(
-    payload: StagePayload,
+    payload: StagePayload, # 目标文本、参考文本和参考音频
     *,
     model: PromptModel,
     wrapper: Qwen3TTSModel,
@@ -1522,15 +1645,24 @@ def prepare_qwen3_tts_request(
     prompt_row_cache_keys: PromptRowCacheKeys,
     default_stream_codec_output: bool = True,
 ) -> Qwen3TTSPreparedRequest:
+    """
+       NOTE 预处理入口
+    """
+
+    # NOTE 从请求解析 qwen tts 请求参数
     state = build_qwen3_tts_state(
-        payload, default_stream_codec_output=default_stream_codec_output
+        payload, # 输入参数
+        default_stream_codec_output=default_stream_codec_output
     )
 
     validate_qwen3_tts_model_task(model, state)
     gen_kwargs = wrapper._merge_generate_kwargs(
         **state.generation_kwargs
     )  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+
+    # NOTE 克隆 tts 链路处理
     if state.task_type == QWEN3_TTS_TASK_BASE:
+        # 
         (
             input_embeds,
             attention_mask,
@@ -1543,6 +1675,7 @@ def prepare_qwen3_tts_request(
             prompt_constants=prompt_constants,
         )
     elif state.task_type == QWEN3_TTS_TASK_CUSTOM_VOICE:
+        # NOTE 内置音色
         (
             input_embeds,
             attention_mask,
@@ -1555,6 +1688,7 @@ def prepare_qwen3_tts_request(
             prompt_constants=prompt_constants,
         )
     elif state.task_type == QWEN3_TTS_TASK_VOICE_DESIGN:
+        # note 音色设计
         (
             input_embeds,
             attention_mask,
@@ -1607,9 +1741,13 @@ def prepare_qwen3_tts_request(
 
 
 def preprocess_qwen3_tts_payload(
-    payload: StagePayload, *, default_stream_codec_output: bool = True
+    payload: StagePayload, *, 
+    default_stream_codec_output: bool = True
 ) -> StagePayload:
-    """Run Qwen3-TTS prompt/audio preprocessing outside the AR scheduler."""
+    """Run Qwen3-TTS prompt/audio preprocessing outside the AR scheduler.
+       
+       NOTE compute_fn 算法
+    """
 
     with _PREPARED_REQUESTS_LOCK:
         context = _PREPROCESSING_CONTEXT
@@ -1622,9 +1760,10 @@ def preprocess_qwen3_tts_payload(
         pass
 
     if context.stream is None:
+        # note 普通链路
         prepared = prepare_qwen3_tts_request(
-            payload,
-            model=context.model,
+            payload, # 输入数据
+            model=context.model, # 模型
             wrapper=context.wrapper,
             prompt_constants=context.prompt_constants,
             prompt_row_cache_keys=context.prompt_row_cache_keys,
