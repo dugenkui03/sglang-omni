@@ -20,7 +20,8 @@ from tts_workbench.storage import Store
 
 logger = logging.getLogger(__name__)
 GPU_INTERVAL_SECONDS = 2
-MAX_LOG_BYTES = 128 * 1024
+MAX_LOG_BYTES = 8 * 1024 * 1024
+MAX_LOG_LINES = 20000
 
 
 class GpuState(BaseModel):
@@ -242,7 +243,9 @@ class GpuMonitor:
                 pass
 
 
-def tail_log(path: Path | None, cursor: str | None) -> LogTail:
+def tail_log(
+    path: Path | None, cursor: str | None, limit: int = MAX_LOG_LINES
+) -> LogTail:
     """Follow only the configured file and handle rotation or truncate/regrow."""
     if path is None:
         return LogTail(source=None, error="No TTS log file was configured")
@@ -275,6 +278,11 @@ def tail_log(path: Path | None, cursor: str | None) -> LogTail:
                         pass
             else:
                 pass
+            if metadata.st_size - offset > 2 * MAX_LOG_BYTES:
+                offset = max(0, metadata.st_size - MAX_LOG_BYTES)
+                reset = True
+            else:
+                pass
             stream.seek(offset)
             content = stream.read(MAX_LOG_BYTES)
             decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -282,7 +290,17 @@ def tail_log(path: Path | None, cursor: str | None) -> LogTail:
             remaining_bytes, _ = decoder.getstate()
             end_offset = offset + len(content) - len(remaining_bytes)
             if reset and offset > 0:
-                text = text.partition("\n")[2]
+                _, separator, suffix = text.partition("\n")
+                if separator:
+                    text = suffix
+                else:
+                    pass
+            else:
+                pass
+            lines = text.splitlines(keepends=True)
+            if len(lines) > limit:
+                text = "".join(lines[-limit:])
+                reset = True
             else:
                 pass
             stream.seek(max(0, end_offset - 32))

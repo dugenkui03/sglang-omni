@@ -22,6 +22,20 @@ class ResponseData:
     latency_ms: float
 
 
+def create_speech_payload(
+    model: str, text: str, language: str, reference_uri: str, reference_text: str
+) -> dict[str, object]:
+    """Build the JSON body from original text and reference bytes without filtering."""
+    return {
+        "model": model,
+        "input": text,
+        "language": language,
+        "response_format": "wav",
+        "stream": False,
+        "references": [{"audio_path": reference_uri, "text": reference_text}],
+    }
+
+
 def read_audio_duration(audio_bytes: bytes) -> float | None:
     """Read optional metadata without changing the server-reported outcome."""
     try:

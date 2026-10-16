@@ -59,20 +59,31 @@ async def test_complete_unit_payload_and_cleanup(
             == wav_bytes
         )
         assert len(list(store.audio_root.rglob("*.wav"))) == 2
+        records = store.request_page(run.id, 0, 30, False).records
+        for record in records:
+            snapshot = store.http_requests.get(record.id)
+            assert snapshot.url == "http://tts.test/v1/audio/speech"
+            assert snapshot.body == observed[record.sequence - 1]
         await runner.cleanup(run.id)
         assert not store.list_runs()
+        assert (
+            store.connection.execute("SELECT COUNT(*) FROM http_payloads").fetchone()[0]
+            == 0
+        )
         assert (settings.data_directory / "reference.wav").read_bytes() == wav_bytes
         assert settings.log_file.read_text() == "original service log\n"
     store.close()
 
 
-async def test_duration_concurrency_skip_stop_and_sampling(
+async def test_qpm_overlapping_requests_stop_and_sampling(
     settings: Settings, wav_bytes: bytes
 ) -> None:
-    """Saturate a single worker and verify no queue, retry, or duplicate sample appears."""
+    """Launch new requests on cadence while earlier responses remain unfinished."""
     simultaneous = 0
     maximum = 0
     starts: list[float] = []
+    five_started = asyncio.Event()
+    release_responses = asyncio.Event()
 
     async def transport(request: httpx.Request) -> httpx.Response:
         """Model a slow HTTP response, independent of any actual GPU service."""
@@ -81,7 +92,11 @@ async def test_duration_concurrency_skip_stop_and_sampling(
         simultaneous += 1
         maximum = max(maximum, simultaneous)
         starts.append(time.monotonic())
-        await asyncio.sleep(0.055)
+        if simultaneous >= 5:
+            five_started.set()
+        else:
+            pass
+        await release_responses.wait()
         simultaneous -= 1
         return httpx.Response(
             200, content=wav_bytes, headers={"X-Finish-Reason": "stop"}
@@ -98,21 +113,58 @@ async def test_duration_concurrency_skip_stop_and_sampling(
                 max_concurrent_requests=1,
             )
         )
-        await asyncio.sleep(0.24)
+        await asyncio.wait_for(five_started.wait(), timeout=2)
         with pytest.raises(ValueError, match="running"):
             await runner.cleanup(run.id)
         with pytest.raises(ValueError, match="already running"):
             await runner.start(RunConfig(model="test-only"))
         await runner.stop(run.id)
+        release_responses.set()
         await runner.task
         final = store.get_run(run.id)
-        assert final.status == "stopped" and final.skipped_count > 0
-        assert maximum == 1 and 2 <= len(starts) <= 5
-        assert all(
-            later - earlier >= 0.05 for earlier, later in zip(starts, starts[1:])
-        )
+        assert final.status == "stopped"
+        assert maximum >= 5
+        assert starts[4] - starts[0] >= 0.02
+        assert "max_concurrent_requests" not in final.config.model_dump()
         assert len(list(store.audio_root.rglob("*.wav"))) == 2
         assert store.statistics(run.id).sent == len(starts)
+        assert (
+            store.connection.execute("SELECT COUNT(*) FROM http_payloads").fetchone()[0]
+            == 2
+        )
+    store.close()
+
+
+async def test_default_english_workload_and_editable_name(
+    settings: Settings, wav_bytes: bytes
+) -> None:
+    """Use fixed UI defaults and retain an edited task name without a model lookup."""
+    observed: list[dict[str, object]] = []
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        """Capture the outgoing defaults independently of the real TTS server."""
+        observed.append(json.loads(request.content))
+        return httpx.Response(200, content=wav_bytes)
+
+    store = Store(settings.results_directory)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        runner = Runner(settings, Dataset(settings.data_directory), store, client)
+        config = RunConfig(mode="single", line_ids=["unit_0"], name="我修改的任务名称")
+        run = await runner.start(config)
+        await runner.task
+        assert run.name == "我修改的任务名称"
+        assert observed[0]["model"] == "qwen3-tts-1.7b-base"
+        assert observed[0]["language"] == "English"
+        assert observed[0]["input"] == "English line 0"
+        assert observed[0]["references"][0]["text"] == "中文台词0"
+        legacy = config.model_dump() | {
+            "max_concurrent_requests": 1,
+            "language": "Chinese",
+        }
+        store.connection.execute(
+            "UPDATE runs SET config_json=? WHERE id=?", (json.dumps(legacy), run.id)
+        )
+        assert store.get_run(run.id).config.language == "Chinese"
     store.close()
 
 
@@ -343,6 +395,7 @@ async def test_unfiltered_reference_and_response(
     lines_path = settings.data_directory / "lines.jsonl"
     lines = [json.loads(row) for row in lines_path.read_text().splitlines()]
     lines[0]["text_zh"] = ""
+    lines[0]["text_en_tts"] = ""
     lines_path.write_text("\n".join(json.dumps(line) for line in lines))
     observed: list[dict[str, object]] = []
 

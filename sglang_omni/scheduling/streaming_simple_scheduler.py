@@ -24,6 +24,7 @@ from typing import Callable
 from sglang_omni.pipeline.stage.stream_queue import StreamItem
 from sglang_omni.proto.request import StagePayload
 from sglang_omni.scheduling.message import IncomingMessage, OutgoingMessage
+from sglang_omni.utils.request_context import request_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -208,21 +209,28 @@ class StreamingSimpleScheduler:
     def handle_message(
         self, msg: IncomingMessage, loop: asyncio.AbstractEventLoop
     ) -> None:
+        """Restore queue-carried identities before synchronous or streaming compute."""
         if msg.type == "new_request":
-            self.handle_new_request_batch(self.collect_new_request_batch(msg), loop)
+            batch = self.collect_new_request_batch(msg)
+            with request_log_context(*(item.request_id for item in batch)):
+                self.handle_new_request_batch(batch, loop)
             return
         else:
             pass
         if msg.type == "stream_chunk":
             if self.can_batch_stream_chunks:
-                self.handle_stream_chunk_batch(self.collect_stream_chunk_batch(msg))
+                batch = self.collect_stream_chunk_batch(msg)
+                with request_log_context(*(item.request_id for item in batch)):
+                    self.handle_stream_chunk_batch(batch)
             else:
-                self.handle_stream_chunk(msg.request_id, msg.data)
+                with request_log_context(msg.request_id):
+                    self.handle_stream_chunk(msg.request_id, msg.data)
             return
         else:
             pass
         if msg.type == "stream_done":
-            self.handle_stream_done(msg.request_id)
+            with request_log_context(msg.request_id):
+                self.handle_stream_done(msg.request_id)
             return
         else:
             pass

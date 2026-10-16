@@ -18,6 +18,7 @@ from tts_workbench.records import (
     RunStatus,
     TimelinePoint,
 )
+from tts_workbench.snapshots import HttpSnapshots
 
 ACTIVE_STATUSES = ("running", "stopping")
 
@@ -75,6 +76,8 @@ class Store:
             CREATE INDEX IF NOT EXISTS gpu_run_time ON gpu_samples(run_id, timestamp);
         """
         )
+
+        self.http_requests = HttpSnapshots(self.connection, self.lock)
 
     def recover_interrupted(self) -> None:
         """Keep abandoned attempts visible after a process restart."""
@@ -363,6 +366,7 @@ class Store:
                 raise ValueError("Stop the task before clearing its results")
             else:
                 self.connection.execute("DELETE FROM runs WHERE id=?", (run_id,))
+                self.http_requests.cleanup()
                 self.statistics_cache.pop(run_id, None)
 
     def close(self) -> None:

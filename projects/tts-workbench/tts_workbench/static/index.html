@@ -12,6 +12,7 @@
         <script src="/static/charts.js" defer></script>
         <script src="/static/controls.js" defer></script>
         <script src="/static/views.js" defer></script>
+        <script src="/static/requests.js" defer></script>
         <script src="/static/app.js" defer></script>
     </head>
     <body>
@@ -78,19 +79,18 @@
                         <span class="muted small">独立 HTTP 请求</span>
                     </div>
                     <form id="run-form">
-                        <label for="model">目标模型</label
-                        ><input
-                            id="model"
-                            list="model-options"
-                            required
-                            placeholder="从服务读取，或填写模型 ID"
+                        <div class="fixed-config">
+                            <strong>Qwen3-TTS</strong
+                            ><span>中文参考 → 英文配音</span>
+                        </div>
+                        <label for="run-name"
+                            >任务名称 <small>自动生成，可修改</small></label
+                        >
+                        <input
+                            id="run-name"
+                            maxlength="100"
                             autocomplete="off"
-                        /><datalist id="model-options"></datalist>
-                        <label for="language">生成语言</label
-                        ><select id="language">
-                            <option value="Chinese">中文 · 原声克隆</option>
-                            <option value="English">英文 · 跨语言克隆</option>
-                        </select>
+                        />
                         <label>运行方式</label>
                         <div
                             class="segmented"
@@ -148,32 +148,16 @@
                                 preload="none"
                             ></audio>
                         </details>
-                        <div class="two-fields">
-                            <div>
-                                <label for="qpm"
-                                    >请求频率 <small>QPM</small></label
-                                ><input
-                                    id="qpm"
-                                    type="number"
-                                    value="10"
-                                    min="0.01"
-                                    max="60000"
-                                    step="any"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label for="concurrency">最大并发</label
-                                ><input
-                                    id="concurrency"
-                                    type="number"
-                                    value="2"
-                                    min="1"
-                                    max="256"
-                                    required
-                                />
-                            </div>
-                        </div>
+                        <label for="qpm">请求频率 <small>QPM</small></label
+                        ><input
+                            id="qpm"
+                            type="number"
+                            value="10"
+                            min="0.01"
+                            max="60000"
+                            step="any"
+                            required
+                        />
                         <div id="duration-fields">
                             <label for="duration-preset">持续时长</label
                             ><select id="duration-preset">
@@ -211,12 +195,6 @@
                                 min="0.1"
                                 max="3600"
                                 step="any"
-                            /><label for="run-name"
-                                >任务名称 <small>可选</small></label
-                            ><input
-                                id="run-name"
-                                maxlength="100"
-                                placeholder="例如：1.7B 中文持续测试"
                             />
                         </details>
                         <div class="estimate" id="estimate">
@@ -237,7 +215,8 @@
                             停止当前任务
                         </button>
                         <p class="form-note">
-                            并发已满时跳过当前发送时机，不积压补发。完整保留请求记录，每句抽样保存首次成功音频。
+                            按 QPM
+                            间隔发起请求，前一请求未完成也继续发送。完整保留请求记录，每句抽样保存首次成功音频。
                         </p>
                     </form>
                 </section>
@@ -410,6 +389,14 @@
                                 />只看失败</label
                             >
                         </div>
+                        <div id="result-player" class="result-player" hidden>
+                            <span id="result-audio-label"></span>
+                            <audio
+                                id="result-audio"
+                                controls
+                                preload="none"
+                            ></audio>
+                        </div>
                         <div class="table-scroll">
                             <table>
                                 <thead>
@@ -418,7 +405,7 @@
                                         <th>台词 / 角色</th>
                                         <th>结果</th>
                                         <th>时延</th>
-                                        <th>音频</th>
+                                        <th>音频 / 详情</th>
                                     </tr>
                                 </thead>
                                 <tbody id="request-rows">
@@ -484,16 +471,27 @@
                             </div>
                             <div class="toolbar-actions">
                                 <button class="text-button" id="pause-log">
-                                    暂停滚动</button
+                                    暂停获取</button
                                 ><button class="text-button" id="copy-log">
                                     复制
                                 </button>
                             </div>
                         </div>
                         <div class="log-tools">
-                            <span class="live-dot"></span
-                            ><span id="log-status">实时跟随</span
-                            ><input
+                            <span id="log-live-dot" class="live-dot"></span
+                            ><span id="log-status">实时跟随</span>
+                            <label class="log-limit-label" for="log-limit"
+                                >显示行数
+                                <input
+                                    id="log-limit"
+                                    type="number"
+                                    min="1"
+                                    max="20000"
+                                    step="1"
+                                    value="20000"
+                                />
+                            </label>
+                            <input
                                 id="log-filter"
                                 placeholder="过滤当前日志窗口…"
                                 aria-label="过滤日志"
@@ -503,8 +501,10 @@
 正在读取服务日志…</pre
                         >
                         <div class="log-footnote">
-                            保留最近 1,500
-                            行显示；原始日志文件不受清理测试结果影响。
+                            <span id="log-window-count"
+                                >保留最近 20,000 行，最多 20,000 行。</span
+                            >
+                            原始日志文件不受清理测试结果影响。
                         </div>
                     </section>
                 </div>

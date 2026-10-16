@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from tts_workbench.config import RunConfig, Settings
 from tts_workbench.dataset import DataCatalog, Dataset
 from tts_workbench.monitor import (
+    MAX_LOG_LINES,
     GpuMonitor,
     GpuView,
     LogTail,
@@ -38,6 +39,8 @@ from tts_workbench.records import (
     TimelinePoint,
 )
 from tts_workbench.runner import Runner
+from tts_workbench.snapshots import HttpRequestDetails
+from tts_workbench.speech import create_speech_payload
 from tts_workbench.storage import Store
 
 logger = logging.getLogger(__name__)
@@ -117,7 +120,7 @@ def create_app(settings: Settings) -> FastAPI:
             async with httpx.AsyncClient(
                 headers=headers,
                 timeout=None,
-                limits=httpx.Limits(max_connections=260, max_keepalive_connections=64),
+                limits=httpx.Limits(max_connections=None, max_keepalive_connections=64),
                 trust_env=False,
             ) as client:
                 runner = Runner(settings, dataset, store, client)
@@ -307,6 +310,36 @@ def create_app(settings: Settings) -> FastAPI:
             store.request_page, run_id, offset, limit, failures_only
         )
 
+    @app.get("/api/workbench/requests/{request_id}/http")
+    async def request_http(request: Request, request_id: str) -> HttpRequestDetails:
+        """Return captured inputs or clearly label a best-effort historical reconstruction."""
+        runtime = runtime_from(request)
+        record = await asyncio.to_thread(runtime.store.get_request, request_id)
+        snapshot = await asyncio.to_thread(runtime.store.http_requests.get, request_id)
+        if snapshot is not None:
+            return snapshot
+        else:
+            run = await asyncio.to_thread(runtime.store.get_run, record.run_id)
+            line = runtime.dataset.lines[record.line_id]
+            try:
+                reference_uri = await asyncio.to_thread(
+                    runtime.dataset.reference_uri, record.line_id
+                )
+            except (OSError, ValueError) as exception:
+                reference_uri = f"Reference audio unavailable: {exception}"
+            return HttpRequestDetails(
+                url=f"{settings.api_base.rstrip('/')}/v1/audio/speech",
+                body=create_speech_payload(
+                    run.config.model,
+                    record.text,
+                    run.config.language,
+                    reference_uri,
+                    line.text_zh,
+                ),
+                source="reconstructed",
+                note="此记录没有请求快照；以下按历史配置、当前素材和服务地址还原，不能确认与当时发出的参数完全一致。",
+            )
+
     @app.get("/api/workbench/audio/{request_id}")
     async def generated_audio(request: Request, request_id: str) -> FileResponse:
         """Play only audio linked to a known stored request."""
@@ -341,9 +374,12 @@ def create_app(settings: Settings) -> FastAPI:
         return GpuView(current=runtime.gpu.current, history=history)
 
     @app.get("/api/workbench/logs")
-    async def logs(cursor: str | None = Query(None, max_length=160)) -> LogTail:
+    async def logs(
+        cursor: str | None = Query(None, max_length=160),
+        limit: int = Query(MAX_LOG_LINES, ge=1, le=MAX_LOG_LINES),
+    ) -> LogTail:
         """Tail the configured TTS log, including rotation and truncation."""
-        return await asyncio.to_thread(tail_log, settings.log_file, cursor)
+        return await asyncio.to_thread(tail_log, settings.log_file, cursor, limit)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIRECTORY), name="static")
     return app

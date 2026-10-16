@@ -103,6 +103,7 @@ from sglang_omni.scheduling.types import (
     SchedulerOutput,
     StreamOutputBuilder,
 )
+from sglang_omni.utils.request_context import request_log_context
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.mlx.tp_worker import MlxTpModelWorker
@@ -1305,27 +1306,29 @@ class OmniScheduler(Generic[RequestDataT]):
     def run_request_builder(
         self, payload: StagePayload, active_stage: str | None
     ) -> RequestDataT | SGLangARRequestData | DeferredAdmission[RequestDataT]:
-        req_id = payload.request_id
-        _emit_event(
-            request_id=req_id,
-            stage=active_stage,
-            event_name="scheduler_request_build_start",
-        )
-        session_unit = self.active_session_unit(req_id)
-        if session_unit is None:
-            req_data = self.request_builder(payload)
-        else:
-            bridge = self.session_bridge
-            assert bridge is not None
-            req_data = bridge.adapter.build(
-                session_unit.session_identity, session_unit.chunk, payload
+        """Restore identity in the builder worker before running model preprocessing."""
+        with request_log_context(payload.request_id):
+            req_id = payload.request_id
+            _emit_event(
+                request_id=req_id,
+                stage=active_stage,
+                event_name="scheduler_request_build_start",
             )
-        _emit_event(
-            request_id=req_id,
-            stage=active_stage,
-            event_name="scheduler_request_build_end",
-        )
-        return req_data
+            session_unit = self.active_session_unit(req_id)
+            if session_unit is None:
+                req_data = self.request_builder(payload)
+            else:
+                bridge = self.session_bridge
+                assert bridge is not None
+                req_data = bridge.adapter.build(
+                    session_unit.session_identity, session_unit.chunk, payload
+                )
+            _emit_event(
+                request_id=req_id,
+                stage=active_stage,
+                event_name="scheduler_request_build_end",
+            )
+            return req_data
 
     def sleep_during_idle(self) -> None:
         with self.request_admission_lock:
@@ -1978,11 +1981,13 @@ class OmniScheduler(Generic[RequestDataT]):
         return NextBatchPlan(batch_to_run=None, running_batch=running_batch)
 
     def run_batch(self, batch, pp_proxy_tensors=None):
-        try:
-            return self._run_batch(batch, pp_proxy_tensors)
-        except Exception as exc:
-            self.handle_batch_failure(batch, exc)
-            return _FAILED_BATCH_RESULT
+        """Attribute nested model logs to every request participating in this batch."""
+        with request_log_context(*(req.rid for req in batch.reqs)):
+            try:
+                return self._run_batch(batch, pp_proxy_tensors)
+            except Exception as exc:
+                self.handle_batch_failure(batch, exc)
+                return _FAILED_BATCH_RESULT
 
     def process_batch_result(self, batch, result) -> None:
         """
@@ -2171,7 +2176,8 @@ class OmniScheduler(Generic[RequestDataT]):
         self.emit_prefill_start_for_batch(batch)
         self.stamp_batch_launch(batch)
         sched_output = self.build_sched_output(batch)
-        pending_step = self.model_runner.execute_launch(sched_output)
+        with request_log_context(*sched_output.request_ids):
+            pending_step = self.model_runner.execute_launch(sched_output)
         return sched_output, pending_step
 
     def run_batch_resolve(self, batch, sched_output, pending_step, skip_rids=()):
@@ -2183,7 +2189,8 @@ class OmniScheduler(Generic[RequestDataT]):
         live batch carries no token side channel under the upstream FutureMap
         contract.
         """
-        mr_output = self.model_runner.execute_resolve(pending_step)
+        with request_log_context(*sched_output.request_ids):
+            mr_output = self.model_runner.execute_resolve(pending_step)
         if mr_output is None:
             return _FAILED_BATCH_RESULT
         else:

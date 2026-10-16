@@ -543,6 +543,16 @@ audio {
     line-height: 1.8;
     color: #a0aabd;
 }
+.fixed-config {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #f0f4ff;
+    color: #6279b2;
+    font-size: 12px;
+}
 .run-toolbar {
     display: flex;
     justify-content: space-between;
@@ -1024,17 +1034,34 @@ td .ellipsis {
 .log-tools {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+    flex-wrap: wrap;
     font-size: 10px;
     color: #8c9bb3;
     padding: 10px 17px;
     background: #fbfcfe;
 }
-.log-tools input {
+.log-tools #log-filter {
     margin-left: auto;
     width: 230px;
     padding: 6px 10px;
     font-size: 10px;
+}
+.log-limit-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+.log-tools #log-limit {
+    width: 86px;
+    padding: 6px 8px;
+    font-size: 11px;
+}
+.live-dot.paused {
+    background: #9daac0;
+    animation: none;
 }
 .log-output {
     margin: 0;
@@ -1118,6 +1145,31 @@ dialog::backdrop {
 }
 .detail-section audio {
     height: 38px;
+}
+.request-actions {
+    display: flex;
+    gap: 12px;
+    white-space: nowrap;
+}
+.result-player {
+    padding: 14px 20px;
+    background: #f4f7ff;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+}
+.result-player span {
+    display: block;
+    margin-bottom: 10px;
+}
+.detail-section .request-json {
+    background: #f2f5fb;
+    color: #425570;
+    max-height: 340px;
+    overflow: auto;
+}
+.raw-request summary {
+    cursor: pointer;
+    color: #6279b2;
 }
 .pill-small {
     font-size: 10px;
@@ -1370,7 +1422,7 @@ dialog::backdrop {
     .gpu-fields {
         grid-template-columns: 1fr 1fr;
     }
-    .log-tools input {
+    .log-tools #log-filter {
         width: 180px;
     }
     .metric strong .unit {

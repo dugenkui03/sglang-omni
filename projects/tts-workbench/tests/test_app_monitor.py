@@ -10,7 +10,12 @@ from fastapi.testclient import TestClient
 
 from tts_workbench.app import create_app
 from tts_workbench.config import Settings
-from tts_workbench.monitor import MAX_LOG_BYTES, optional_number, tail_log
+from tts_workbench.monitor import (
+    MAX_LOG_BYTES,
+    MAX_LOG_LINES,
+    optional_number,
+    tail_log,
+)
 
 
 def test_authenticated_api_and_static_files(settings: Settings) -> None:
@@ -95,6 +100,25 @@ def test_log_multibyte_read_boundary(tmp_path: Path) -> None:
     first = tail_log(path, empty.cursor)
     second = tail_log(path, first.cursor)
     assert first.text + second.text == source
+
+
+def test_log_line_limit_and_catching_up(tmp_path: Path) -> None:
+    """Read the latest 20k lines and discard a stale backlog beyond the byte window."""
+    path = tmp_path / "large.log"
+    path.write_text("".join(f"line {index}\n" for index in range(25000)))
+    first = tail_log(path, None)
+    assert len(first.text.splitlines()) == MAX_LOG_LINES
+    assert first.text.startswith("line 5000\n")
+    smaller = tail_log(path, None, 100)
+    assert len(smaller.text.splitlines()) == 100
+    assert smaller.text.startswith("line 24900\n")
+    with path.open("a") as stream:
+        stream.write("new\n" * (MAX_LOG_BYTES // 2 + 2))
+        stream.write("latest\n")
+    caught_up = tail_log(path, first.cursor, 50)
+    assert caught_up.reset
+    assert len(caught_up.text.splitlines()) == 50
+    assert caught_up.text.endswith("latest\n")
 
 
 async def test_gpu_na_is_not_zero(

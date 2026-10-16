@@ -12,16 +12,20 @@ from pathlib import Path
 
 from huggingface_hub.utils import logging as hf_logging
 
+from sglang_omni.utils.request_context import current_request_label
+
 
 class DebugLogFormatter(logging.Formatter):
     """Format source-aware logs in UTC+8, with colors on terminals."""
 
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        """Render the shared serving timestamp in UTC+8."""
         return datetime.fromtimestamp(
             record.created, timezone(timedelta(hours=8))
         ).strftime(datefmt or "%H:%M:%S")
 
     def format(self, record: logging.LogRecord) -> str:
+        """Insert the scoped request identity on line two without changing log calls."""
         message = super().format(record)
         first_line, separator, remaining = message.partition("\n")
         method_name = record.funcName
@@ -51,6 +55,7 @@ class DebugLogFormatter(logging.Formatter):
         }.get(record.levelno, "")
         lines = [
             (level_color, f"[{self.formatTime(record)}] {record.levelname}"),
+            ("\033[36m", f"  {current_request_label()}"),
             ("\033[34m", f"  {record.filename}:{record.lineno}"),
             ("\033[35m", f"    方法：{method_name}()"),
             ("\033[32m", f"      内容：{first_line}"),
@@ -84,6 +89,7 @@ def configure_logging(log_level: int | str) -> None:
 
 
 def configure_dependency_loggers() -> None:
+    """Route dependency output through the same application handlers."""
     hub_logger = hf_logging.get_logger()
     for console_handler in hub_logger.handlers[:]:
         if type(console_handler) is logging.StreamHandler:

@@ -1,4 +1,4 @@
-"""Schedule bounded HTTP workloads independently of browser connections."""
+"""Schedule paced HTTP workloads independently of browser connections."""
 
 import asyncio
 import logging
@@ -15,7 +15,11 @@ import httpx
 from tts_workbench.config import RunConfig, Settings
 from tts_workbench.dataset import Dataset, DialogueLine
 from tts_workbench.records import RequestRecord, RunRecord
-from tts_workbench.speech import read_audio_duration, receive_audio
+from tts_workbench.speech import (
+    create_speech_payload,
+    read_audio_duration,
+    receive_audio,
+)
 from tts_workbench.storage import Store
 
 logger = logging.getLogger(__name__)
@@ -23,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ActiveRun:
-    """Bound in-memory state by concurrency and the selected input set."""
+    """Track in-flight requests and retained samples for the selected input set."""
 
     record: RunRecord
     lines: list[DialogueLine]
@@ -86,7 +90,9 @@ class Runner:
             run = RunRecord(
                 id=uuid.uuid4().hex,
                 name=config.name.strip()
-                or time.strftime("%m-%d %H:%M") + " " + config.language,
+                or "Qwen3-TTS 中→"
+                + ("英 " if config.language == "English" else "中 ")
+                + time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(created_at)),
                 status="running",
                 created_at=created_at,
                 config=config,
@@ -110,7 +116,7 @@ class Runner:
                 await asyncio.to_thread(self.store.get_run, run_id)
 
     async def dispatch(self, active: ActiveRun) -> None:
-        """Use monotonic deadlines, bounded concurrency, and no automatic retries."""
+        """Launch at QPM deadlines without waiting for earlier requests or retrying."""
         config = active.record.config
         interval_seconds = 60 / config.requests_per_minute
         started_seconds = time.monotonic()
@@ -165,16 +171,13 @@ class Runner:
                 slot += missed
                 skipped += missed
                 next_seconds = started_seconds + slot * interval_seconds
-                if len(active.tasks) >= config.max_concurrent_requests:
-                    skipped += 1
-                else:
-                    line = active.lines[sequence % len(active.lines)]
-                    sequence += 1
-                    task = asyncio.create_task(
-                        self.request(active, line, sequence, next_seconds)
-                    )
-                    active.tasks.add(task)
-                    task.add_done_callback(request_finished)
+                line = active.lines[sequence % len(active.lines)]
+                sequence += 1
+                task = asyncio.create_task(
+                    self.request(active, line, sequence, next_seconds)
+                )
+                active.tasks.add(task)
+                task.add_done_callback(request_finished)
                 slot += 1
                 if skipped > persisted_skipped:
                     await asyncio.to_thread(
@@ -252,14 +255,15 @@ class Runner:
             reference_uri = await asyncio.to_thread(
                 self.dataset.reference_uri, line.line_id
             )
-            payload = {
-                "model": config.model,
-                "input": text,
-                "language": config.language,
-                "response_format": "wav",
-                "stream": False,
-                "references": [{"audio_path": reference_uri, "text": line.text_zh}],
-            }
+            payload = create_speech_payload(
+                config.model, text, config.language, reference_uri, line.text_zh
+            )
+            await asyncio.to_thread(
+                self.store.http_requests.save,
+                record.id,
+                f"{self.settings.api_base.rstrip('/')}/v1/audio/speech",
+                payload,
+            )
             response = await asyncio.wait_for(
                 receive_audio(self.client, self.settings.api_base, payload),
                 timeout=config.request_timeout_seconds,

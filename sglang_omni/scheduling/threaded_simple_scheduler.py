@@ -14,6 +14,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, Generic, TypeVar
 
 from sglang_omni.scheduling.message import IncomingMessage, OutgoingMessage
+from sglang_omni.utils.request_context import request_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,9 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
                             continue
                         else:
                             pass
-                        future = self.executor.submit(self.run_one, msg.data)
+                        future = self.executor.submit(
+                            self.run_one, msg.data, request_id
+                        )
                         self.pending[request_id] = future
                     finally:
                         self.inbox.release_claim(request_id)
@@ -229,13 +232,15 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
                     pass
             time.sleep(0.001)
 
-    def run_one(self, payload: ComputeInput) -> ComputeResult:
-        result = self.fn(payload)
-        if inspect.isawaitable(result):
-            result = asyncio.run(result)
-        else:
-            pass
-        return result
+    def run_one(self, payload: ComputeInput, request_id: str) -> ComputeResult:
+        """Rebind the message identity inside the executor thread for nested logs."""
+        with request_log_context(request_id):
+            result = self.fn(payload)
+            if inspect.isawaitable(result):
+                result = asyncio.run(result)
+            else:
+                pass
+            return result
 
     def finish(self, request_id: str, future: Future) -> None:
         with self.lock:

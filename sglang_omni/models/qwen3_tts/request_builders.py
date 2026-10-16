@@ -52,6 +52,8 @@ from sglang_omni.scheduling.types import RequestOutput
 from sglang_omni.utils.audio_payload import audio_data_uri_from_reference
 from sglang_omni.utils.device import supports_device_streams
 
+from sglang_omni.utils.request_context import request_ids_context, request_log_context
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -1034,8 +1036,9 @@ class Qwen3TTSRefCodeBatcher:
     def submit(
         self, waveform: str | npt.NDArray[np.generic], sample_rate: int
     ) -> concurrent.futures.Future[torch.Tensor]:
+        """Carry caller identities across the reference-code worker queue."""
         future: concurrent.futures.Future[torch.Tensor] = concurrent.futures.Future()
-        self.queue.put((waveform, int(sample_rate), future))
+        self.queue.put((waveform, int(sample_rate), future, request_ids_context.get()))
         return future
 
     def drain(self) -> tuple[list[object], bool]:
@@ -1156,6 +1159,7 @@ class Qwen3TTSRefCodeBatcher:
         return codes[0, :, :frames].transpose(0, 1)
 
     def run(self) -> None:
+        """Restore each reference's context independently, even within a shared batch."""
         while True:
             raw_batch, shutdown = self.drain()
             if not raw_batch:
@@ -1163,7 +1167,7 @@ class Qwen3TTSRefCodeBatcher:
             else:
                 pass
             batch = [
-                item for item in raw_batch if isinstance(item, tuple) and len(item) == 3
+                item for item in raw_batch if isinstance(item, tuple) and len(item) == 4
             ]
             outcomes: dict[int, torch.Tensor | Exception] = {}
             encode_stream_ctx = (
@@ -1172,13 +1176,14 @@ class Qwen3TTSRefCodeBatcher:
                 else contextlib.nullcontext()
             )
             with torch.inference_mode(), encode_stream_ctx:
-                for index, (waveform, sample_rate, _) in enumerate(batch):
+                for index, (waveform, sample_rate, _, request_ids) in enumerate(batch):
                     try:
-                        outcomes[index] = self.encode_waveform(waveform, sample_rate)
+                        with request_log_context(*request_ids):
+                            outcomes[index] = self.encode_waveform(waveform, sample_rate)
                     except Exception as exc:
                         outcomes[index] = exc
             self.synchronize_outcomes(outcomes)
-            for index, (_, _, future) in enumerate(batch):
+            for index, (_, _, future, _) in enumerate(batch):
                 outcome = outcomes[index]
                 if isinstance(outcome, Exception):
                     future.set_exception(outcome)

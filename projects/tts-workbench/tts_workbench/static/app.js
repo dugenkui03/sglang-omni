@@ -14,7 +14,9 @@ const state = {
     total: 0,
     logCursor: null,
     logText: "",
-    autoScroll: true,
+    logsPaused: false,
+    logController: null,
+    logLineLimit: 20000,
     polling: false,
     servicePolling: false,
     submitting: false,
@@ -46,7 +48,7 @@ async function api(path, options = {}) {
             "X-Workbench-Client": "1",
             ...options.headers,
         },
-        signal: AbortSignal.timeout(20000),
+        signal: options.signal ?? AbortSignal.timeout(20000),
     });
     const payload = await response.json();
     if (!response.ok) {
@@ -120,12 +122,6 @@ async function refreshService() {
             `badge ${service.healthy ? "" : "error"}`;
         element("service-status").title =
             service.error ?? "健康检查通过；生成能力以实际请求为准";
-        element("model-options").innerHTML = service.models
-            .map((model) => `<option value="${escapeText(model)}"></option>`)
-            .join("");
-        if (!element("model").value && service.models.length) {
-            element("model").value = service.models[0];
-        }
     } catch (error) {
         element("service-status").textContent = "工作台连接异常";
         element("service-status").className = "badge error";
@@ -179,7 +175,7 @@ async function poll() {
             await refreshRequests();
         } else if (state.tab === "gpu") {
             await refreshGpu();
-        } else if (state.tab === "logs") {
+        } else if (state.tab === "logs" && !state.logsPaused) {
             await refreshLogs();
         }
         updateEstimate();
@@ -192,6 +188,10 @@ async function poll() {
 
 /** Attach controls once and initialize the actual dataset and task history. */
 async function initialize() {
+    generateRunName();
+    element("log-limit").value =
+        localStorage.getItem("workbench-log-limit") ?? "20000";
+    updateLogLimit();
     document
         .querySelectorAll("[data-tab]")
         .forEach((button) =>
@@ -249,21 +249,25 @@ async function initialize() {
         poll();
     });
     element("request-rows").addEventListener("click", (event) => {
+        const playback = event.target.closest("[data-play]");
+        if (playback) {
+            playResult(playback.dataset.play);
+            return;
+        }
         const button = event.target.closest("[data-request]");
         if (button) {
             showRequest(button.dataset.request);
         }
     });
+    ["play", "pause", "ended"].forEach((event) =>
+        element("result-audio").addEventListener(event, updatePlaybackButtons),
+    );
     element("close-dialog").addEventListener("click", () => {
         element("request-dialog").close();
         element("request-detail").innerHTML = "";
     });
-    element("pause-log").addEventListener("click", () => {
-        state.autoScroll = !state.autoScroll;
-        element("pause-log").textContent = state.autoScroll
-            ? "暂停滚动"
-            : "恢复滚动";
-    });
+    element("pause-log").addEventListener("click", toggleLogFetching);
+    element("log-limit").addEventListener("change", updateLogLimit);
     element("log-filter").addEventListener("input", renderLogs);
     element("copy-log").addEventListener("click", copyLogs);
     try {

@@ -1,6 +1,20 @@
 /** Configure real workloads using the portable dialogue catalog. */
 "use strict";
 
+/** Fill a fresh editable name using the browser's local time, never during polling. */
+function generateRunName() {
+    const now = new Date();
+    const parts = [
+        now.getMonth() + 1,
+        now.getDate(),
+        now.getHours(),
+        now.getMinutes(),
+        now.getSeconds(),
+    ].map((value) => String(value).padStart(2, "0"));
+    element("run-name").value =
+        `Qwen3-TTS 中→英 ${now.getFullYear()}-${parts[0]}-${parts[1]} ${parts[2]}:${parts[3]}:${parts[4]}`;
+}
+
 /** Return source-ordered lines matching the current unit and role filters. */
 function selectedLines() {
     const units = [...document.querySelectorAll(".unit-check:checked")].map(
@@ -125,11 +139,12 @@ async function startRun(event) {
     state.submitting = true;
     updateEstimate();
     try {
+        if (!element("run-name").value.trim()) {
+            generateRunName();
+        }
         const payload = {
             name: element("run-name").value,
-            model: element("model").value.trim(),
             mode: state.mode,
-            language: element("language").value,
             unit_ids: [...document.querySelectorAll(".unit-check:checked")].map(
                 (input) => input.value,
             ),
@@ -139,7 +154,6 @@ async function startRun(event) {
             line_ids: state.mode === "single" ? [element("line").value] : [],
             requests_per_minute: Number(element("qpm").value),
             duration_seconds: chosenSeconds(),
-            max_concurrent_requests: Number(element("concurrency").value),
             request_timeout_seconds: Number(element("timeout").value),
         };
         const run = await api("/runs", {
@@ -151,6 +165,7 @@ async function startRun(event) {
         state.offset = 0;
         localStorage.setItem("workbench-run", run.id);
         element("notice").hidden = true;
+        generateRunName();
         await poll();
     } catch (error) {
         notify(`无法开始测试：${error.message}`);

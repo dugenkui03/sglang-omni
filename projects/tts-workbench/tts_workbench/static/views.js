@@ -32,7 +32,7 @@ function renderDetail(detail) {
     element("run-status").className =
         `badge ${run?.status === "running" ? "running" : run?.status === "failed" ? "error" : "neutral"}`;
     element("run-description").textContent = run
-        ? `${run.config.language === "Chinese" ? "中文" : "英文"}克隆 · ${run.line_ids.length} 条素材 · ${run.config.max_concurrent_requests} 并发`
+        ? `${run.config.language === "Chinese" ? "中文原声克隆" : "中文参考 → 英文配音"} · ${run.line_ids.length} 条素材 · ${count(run.config.requests_per_minute)} QPM`
         : "准备好素材，开始第一次测试";
     const elapsed = run
         ? (run.ended_at ?? Date.now() / 1000) - run.created_at
@@ -135,7 +135,7 @@ function renderRows() {
         ? state.rows
               .map(
                   (record) =>
-                      `<tr><td>#${record.sequence}<small>${shortTime(record.started_at)}</small></td><td><button class="row-text ellipsis" data-request="${record.id}" title="${escapeText(record.text)}">${escapeText(record.text)}</button><small>${escapeText(record.speaker)} · ${escapeText(record.line_id)}${record.reference_text_needs_review ? " · 参考待复核" : ""}</small></td><td><span class="badge ${record.status === "success" ? "" : record.status === "inflight" ? "neutral" : "error"}">${statusLabels[record.status]}</span></td><td>${latency(record.latency_ms)}</td><td>${record.audio_path ? `<button class="text-button" data-request="${record.id}">▶ 试听</button>` : `<button class="text-button muted" data-request="${record.id}">详情</button>`}</td></tr>`,
+                      `<tr><td>#${record.sequence}<small>${shortTime(record.started_at)}</small></td><td><button class="row-text ellipsis" data-request="${record.id}" title="${escapeText(record.text)}">${escapeText(record.text)}</button><small>${escapeText(record.speaker)} · ${escapeText(record.line_id)}${record.reference_text_needs_review ? " · 参考待复核" : ""}</small></td><td><span class="badge ${record.status === "success" ? "" : record.status === "inflight" ? "neutral" : "error"}">${statusLabels[record.status]}</span></td><td>${latency(record.latency_ms)}</td><td><div class="request-actions">${record.audio_path ? `<button class="text-button" data-play="${record.id}">▶ 试听</button>` : ""}<button class="text-button" data-request="${record.id}">详情</button></div></td></tr>`,
               )
               .join("")
         : '<tr><td colspan="5" class="table-empty">暂无符合条件的请求记录。</td></tr>';
@@ -143,17 +143,7 @@ function renderRows() {
         `${count(state.total)} 条记录${state.total ? ` · ${state.offset + 1}–${Math.min(state.offset + 30, state.total)}` : ""}`;
     element("previous-page").disabled = state.offset === 0;
     element("next-page").disabled = state.offset + 30 >= state.total;
-}
-
-/** Show request diagnostics and playable retained audio together. */
-function showRequest(identifier) {
-    const record = state.rows.find((row) => row.id === identifier);
-    if (!record) {
-        return;
-    }
-    element("request-detail").innerHTML =
-        `<span class="badge ${record.status === "success" ? "" : "neutral"}">${statusLabels[record.status]}</span><div class="detail-grid"><div><span>台词 / 角色</span>${escapeText(record.line_id)} · ${escapeText(record.speaker)}</div><div><span>HTTP / 结束原因</span>${record.http_status ?? "—"} / ${escapeText(record.finish_reason ?? "—")}</div><div><span>总时延 / 调度延迟</span>${latency(record.latency_ms)} / ${latency(record.scheduling_delay_ms)}</div><div><span>音频时长 / 大小</span>${record.audio_duration_seconds?.toFixed(2) ?? "—"} s / ${(record.audio_bytes / 1024).toFixed(1)} KiB</div></div><div class="detail-section"><h3>合成文本</h3><p>${escapeText(record.text)}</p></div><div class="detail-section"><h3>服务请求 ID</h3><p class="detail-id">${escapeText(record.service_request_id ?? "服务未返回请求 ID")}</p></div>${record.error ? `<div class="detail-section"><h3>错误 · ${escapeText(record.error_type)}</h3><pre>${escapeText(record.error)}</pre></div>` : ""}<div class="detail-section"><h3>生成音频</h3>${record.audio_path ? `<audio controls src="${API}/audio/${record.id}"></audio>` : '<p class="muted">本次没有保存音频样本，统计记录已保留。</p>'}</div><div class="detail-section"><h3>中文参考音频${record.reference_text_needs_review ? " · 转写待复核" : ""}</h3><audio controls preload="none" src="${API}/references/${encodeURIComponent(record.line_id)}"></audio></div>`;
-    element("request-dialog").showModal();
+    updatePlaybackButtons();
 }
 
 /** Render real device readings and distinguish missing hardware from idle GPUs. */
@@ -194,26 +184,98 @@ async function refreshGpu() {
 
 /** Keep an incremental bounded log window, including file-rotation resets. */
 async function refreshLogs() {
-    const result = await api(
-        `/logs${state.logCursor ? `?cursor=${encodeURIComponent(state.logCursor)}` : ""}`,
-    );
-    element("log-source").textContent = result.source ?? "尚未配置日志文件";
-    if (result.error) {
-        element("log-output").textContent = result.error;
-        element("log-status").textContent = "日志暂不可用";
+    if (state.logsPaused || state.logController) {
         return;
     }
-    state.logCursor = result.cursor;
-    state.logText = ((result.reset ? "" : state.logText) + result.text)
-        .replace(/\x1b\[[0-9;]*m/g, "")
-        .split("\n")
-        .slice(-1500)
-        .join("\n")
-        .slice(-512000);
-    element("log-status").textContent = state.autoScroll
-        ? "实时跟随"
-        : "持续读取 · 已暂停滚动";
+    const controller = new AbortController();
+    state.logController = controller;
+    try {
+        const query = new URLSearchParams({ limit: state.logLineLimit });
+        if (state.logCursor) {
+            query.set("cursor", state.logCursor);
+        }
+        const result = await api(`/logs?${query}`, {
+            signal: AbortSignal.any([
+                controller.signal,
+                AbortSignal.timeout(20000),
+            ]),
+        });
+        if (state.logsPaused || controller.signal.aborted) {
+            return;
+        }
+        element("log-source").textContent = result.source ?? "尚未配置日志文件";
+        if (result.error) {
+            element("log-output").textContent = result.error;
+            element("log-status").textContent = "日志暂不可用";
+            return;
+        }
+        state.logCursor = result.cursor;
+        state.logText = (
+            (result.reset ? "" : state.logText) + result.text
+        ).replace(/\x1b\[[0-9;]*m/g, "");
+        trimLogWindow();
+        element("log-status").textContent = "实时获取";
+        renderLogs();
+    } catch (error) {
+        if (!controller.signal.aborted) {
+            throw error;
+        }
+    } finally {
+        state.logController = null;
+    }
+}
+
+/** Stop log network requests immediately, including an unfinished response. */
+function toggleLogFetching() {
+    state.logsPaused = !state.logsPaused;
+    element("pause-log").textContent = state.logsPaused
+        ? "恢复获取"
+        : "暂停获取";
+    element("log-status").textContent = state.logsPaused
+        ? "已暂停获取"
+        : "实时获取";
+    element("log-live-dot").classList.toggle("paused", state.logsPaused);
+    if (state.logsPaused) {
+        state.logController?.abort();
+    } else {
+        state.logCursor = null;
+        poll();
+    }
+}
+
+/** Persist a smaller display window and reload the latest window when expanded. */
+function updateLogLimit() {
+    const previous = state.logLineLimit;
+    state.logLineLimit = Math.max(
+        1,
+        Math.min(
+            20000,
+            Math.floor(Number(element("log-limit").value)) || 20000,
+        ),
+    );
+    element("log-limit").value = state.logLineLimit;
+    localStorage.setItem("workbench-log-limit", String(state.logLineLimit));
+    if (state.logLineLimit !== previous) {
+        state.logController?.abort();
+    }
+    if (state.logLineLimit > previous) {
+        state.logCursor = null;
+    }
+    trimLogWindow();
     renderLogs();
+}
+
+/** Keep exactly the requested number of lines without counting a final newline. */
+function trimLogWindow() {
+    const trailingNewline = state.logText.endsWith("\n");
+    const lines = state.logText ? state.logText.split("\n") : [];
+    if (trailingNewline) {
+        lines.pop();
+    }
+    const retained = lines.slice(-state.logLineLimit);
+    state.logText = retained.join("\n") + (trailingNewline ? "\n" : "");
+    element("log-window-count").textContent =
+        `当前 ${count(retained.length)} 行 · 保留最近 ${count(state.logLineLimit)} 行，最多 20,000 行。`;
 }
 
 /** Filter only the displayed window while preserving its unfiltered buffer. */
@@ -227,7 +289,7 @@ function renderLogs() {
               .filter((line) => line.toLowerCase().includes(keyword))
               .join("\n")
         : state.logText || "日志文件已连接，等待新内容…";
-    output.scrollTop = state.autoScroll ? output.scrollHeight : position;
+    output.scrollTop = state.logsPaused ? position : output.scrollHeight;
 }
 
 /** Copy visible logs with a fallback for HTTP hosts lacking clipboard access. */

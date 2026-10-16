@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 @dataclass(frozen=True)
@@ -57,13 +57,25 @@ class RunConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     name: str = Field(default="", max_length=100)
-    model: str = Field(min_length=1, max_length=300)
+    model: str = Field(default="qwen3-tts-1.7b-base", min_length=1, max_length=300)
     mode: Literal["duration", "once", "single"] = "duration"
-    language: Literal["Chinese", "English"] = "Chinese"
+    language: Literal["Chinese", "English"] = "English"
     unit_ids: list[str] = Field(default_factory=list, max_length=100)
     speaker_ids: list[str] = Field(default_factory=list, max_length=1000)
     line_ids: list[str] = Field(default_factory=list, max_length=10000)
     requests_per_minute: float = Field(default=10, gt=0, le=60000)
     duration_seconds: float = Field(default=600, gt=0, le=604800)
-    max_concurrent_requests: int = Field(default=2, ge=1, le=256)
     request_timeout_seconds: float = Field(default=120, gt=0, le=3600)
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_concurrency(cls, value: object) -> object:
+        """Read historical tasks and old browser submissions without restoring a cap."""
+        if isinstance(value, dict):
+            return {
+                key: item
+                for key, item in value.items()
+                if key != "max_concurrent_requests"
+            }
+        else:
+            return value

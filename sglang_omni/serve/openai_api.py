@@ -140,6 +140,7 @@ from sglang_omni.serve.streaming import (
 )
 from sglang_omni.serve.transcriptions import LongAudioAdmission, register_transcriptions
 from sglang_omni.serve.translations import register_translations
+from sglang_omni.utils.request_context import request_log_context
 
 logger = logging.getLogger(__name__)
 HTTP_DISCONNECT_POLL_INTERVAL_S = 0.05
@@ -1545,12 +1546,24 @@ def speech_generation_failure_response(
 
 
 def register_speech(app: FastAPI) -> None:
+    """Register speech routes with a request identity shared by logs and responses."""
+
     @app.post("/v1/audio/speech")
     async def create_speech(request: Request) -> Response:
+        """Scope validation and HTTP handling, including failed request responses."""
+        request_id = f"speech-{uuid.uuid4()}"
+        with request_log_context(request_id):
+            logger.info("Speech request received")
+            response = await create_speech_response(request, request_id)
+            response.headers["X-Request-Id"] = request_id
+            logger.info(f"Speech response ready: HTTP {response.status_code}")
+            return response
+
+    async def create_speech_response(request: Request, request_id: str) -> Response:
+        """Run the existing speech contract inside its request log scope."""
         client: Client = app.state.client
         speech_service: SpeechRequestValidator = app.state.speech_service
 
-        request_id = f"speech-{uuid.uuid4()}"
         try:
             payload = await request.json()
             prepared = await asyncio.to_thread(
