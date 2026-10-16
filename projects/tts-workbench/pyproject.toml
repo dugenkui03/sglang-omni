@@ -34,3 +34,7 @@ testpaths = ["tests"]
 [tool.isort]
 profile = "black"
 known_first_party = ["tts_workbench"]
+
+[tool.uv]
+# Isolate this application from the parent model runtime's dependency overrides.
+override-dependencies = []

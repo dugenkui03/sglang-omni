@@ -40,7 +40,8 @@ class Store:
         self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.statistics_cache: dict[str, tuple[float, RunStatistics]] = {}
-        self.connection.executescript("""
+        self.connection.executescript(
+            """
             CREATE TABLE IF NOT EXISTS runs (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL,
                 created_at REAL NOT NULL, ended_at REAL, config_json TEXT NOT NULL,
@@ -72,7 +73,8 @@ class Store:
                 utilization_percent REAL, temperature_celsius REAL, power_watts REAL
             );
             CREATE INDEX IF NOT EXISTS gpu_run_time ON gpu_samples(run_id, timestamp);
-        """)
+        """
+        )
 
     def recover_interrupted(self) -> None:
         """Keep abandoned attempts visible after a process restart."""

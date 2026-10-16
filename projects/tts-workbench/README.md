@@ -125,6 +125,22 @@ uv sync --frozen
 mkdir -p results
 ```
 
+如果服务器无法访问 PyPI 文件下载站，可导出相同锁定版本并从腾讯镜像安装：
+
+```bash
+uv venv --python python3.10
+mkdir -p results
+uv export --frozen --no-dev --no-emit-project \
+  --format requirements-txt --output-file results/server-requirements.txt
+uv --no-config pip install --python .venv/bin/python \
+  --index-url https://mirrors.cloud.tencent.com/pypi/simple \
+  --require-hashes -r results/server-requirements.txt
+uv --no-config pip install --python .venv/bin/python --no-deps \
+  --index-url https://mirrors.cloud.tencent.com/pypi/simple -e .
+```
+
+工作台自带独立 `tool.uv` 配置，避免继承父项目的模型依赖覆盖规则。镜像安装仍使用锁文件中的版本及包哈希，不修改模型虚拟环境。
+
 在 Bash 中交互输入工作台口令，避免将口令写入命令历史：
 
 ```bash
