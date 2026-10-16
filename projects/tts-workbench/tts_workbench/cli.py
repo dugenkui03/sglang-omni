@@ -55,7 +55,7 @@ def main() -> None:
     parser.add_argument(
         "--allow-unauthenticated-local",
         action="store_true",
-        help="Allow password-free loopback-only local development",
+        help="Allow password-free loopback access for local use or SSH forwarding",
     )
     arguments = parser.parse_args()
     password = os.environ.get(arguments.password_env)

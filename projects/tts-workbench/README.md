@@ -78,7 +78,7 @@ uv run --frozen tts-workbench \
 
 如果本机直接连接远程 TTS HTTP 地址，GPU 和日志仍属于**运行工作台进程的主机**。要查看服务器资源，应把工作台也部署到对应 GPU 服务器。
 
-`--allow-unauthenticated-local` 只允许回环地址监听。公网或局域网监听需要访问口令。
+`--allow-unauthenticated-local` 只允许回环地址监听，也适用于服务器上的 SSH 转发入口。免登录启动时需移除进程的 `TTS_WORKBENCH_PASSWORD` 环境变量；公网或局域网监听需要访问口令。
 
 ## 服务器部署
 
@@ -147,36 +147,29 @@ uv --no-config pip install --python .venv/bin/python --no-deps \
 
 工作台自带独立 `tool.uv` 配置，避免继承父项目的模型依赖覆盖规则。镜像安装仍使用锁文件中的版本及包哈希，不修改模型虚拟环境。
 
-在 Bash 中交互输入工作台口令，避免将口令写入命令历史：
+当前通过 SSH 转发访问，工作台只监听服务器回环地址，浏览器无需登录。后台启动时移除进程继承的旧工作台口令，按实际情况替换 TTS 地址和日志路径：
 
 ```bash
-read -r -s -p '工作台访问口令: ' TTS_WORKBENCH_PASSWORD
-export TTS_WORKBENCH_PASSWORD
-printf '\n'
-```
-
-后台启动工作台。按实际情况替换 TTS 地址和日志路径：
-
-```bash
-nohup .venv/bin/tts-workbench \
+nohup env -u TTS_WORKBENCH_PASSWORD .venv/bin/tts-workbench \
   --api-base http://127.0.0.1:8000 \
   --data-dir ../../tts_test_data \
   --results-dir ./results/server \
   --log-file ../../logs/tts.log \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8081 \
+  --allow-unauthenticated-local \
   > ./results/workbench.log 2>&1 &
 ```
 
-浏览器访问 `http://服务器地址:8081`，登录用户名为 **`workbench`**，密码为上面输入的口令。按服务器既有网络配置允许本机访问这个端口。公网正式使用时将端口接到 HTTPS 反向代理；HTTP Basic 本身不加密口令传输。
-
-服务器端口无法直连时，可以在本机建立 SSH 转发：
+在本机建立 SSH 转发：
 
 ```bash
 ssh -N -L 127.0.0.1:8081:127.0.0.1:8081 root@服务器地址
 ```
 
-然后访问 `http://127.0.0.1:8081`，仍使用工作台账号登录。这个本机地址只是服务器工作台的访问入口，调度、TTS 请求、GPU 读取、日志读取和结果保存全部发生在服务器。SSH 连接断开只会断开页面访问，不会停止服务器上的测试任务；重新建立转发即可继续查看。
+然后直接访问 `http://127.0.0.1:8081`，无需用户名或密码。这个本机地址只是服务器工作台的访问入口，调度、TTS 请求、GPU 读取、日志读取和结果保存全部发生在服务器。SSH 连接断开只会断开页面访问，不会停止服务器上的测试任务；重新建立转发即可继续查看。
+
+如果以后需要公网或局域网直连，再设置 `TTS_WORKBENCH_PASSWORD`，移除免登录参数和 `env -u TTS_WORKBENCH_PASSWORD`，并将监听地址改为 `0.0.0.0`；用户名为 `workbench`。公网访问使用 HTTPS 反向代理。
 
 如 TTS 服务需要 Bearer Key，设置服务器环境变量 `TTS_API_KEY` 后启动。密钥只用于后端请求，不返回浏览器，也不写入任务配置。页面所有请求同源，目标 TTS 地址在进程启动时配置。
 
@@ -241,7 +234,7 @@ projects/tts-workbench/
 | `GET /logs/download?request_id=...` | 下载当前日志文件中该请求的全部完整记录，不受显示行数限制 |
 | `GET /audio/{request_id}`、`GET /references/{line_id}` | 已抽样生成音频、已知素材音频 |
 
-修改接口需要 HTTP Basic 认证（本机开发例外）与 `X-Workbench-Client: 1` 请求头。浏览器页面已自动处理。新增请求时，空筛选列表表示全部素材，`single` 模式必须明确选择一个 `line_id`。
+修改接口需要 `X-Workbench-Client: 1` 请求头，浏览器页面已自动处理。回环地址与 SSH 转发模式免登录；配置访问口令时，页面和接口统一使用 HTTP Basic 认证。新增请求时，空筛选列表表示全部素材，`single` 模式必须明确选择一个 `line_id`。
 
 ## 验证
 
