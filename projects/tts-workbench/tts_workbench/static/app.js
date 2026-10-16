@@ -11,6 +11,7 @@ const state = {
     detail: null,
     rows: [],
     requestTaskName: "",
+    requestRunId: "",
     offset: 0,
     total: 0,
     logCursor: null,
@@ -19,7 +20,11 @@ const state = {
     logController: null,
     logLineLimit: 20000,
     logRequestId: "",
+    logScope: "all",
     logTruncated: false,
+    logLoading: false,
+    logError: "",
+    logMatchedLines: null,
     polling: false,
     servicePolling: false,
     submitting: false,
@@ -143,6 +148,11 @@ async function poll() {
     state.polling = true;
     try {
         const collection = await api("/runs");
+        collection.runs.sort(
+            (left, right) =>
+                right.created_at - left.created_at ||
+                right.id.localeCompare(left.id),
+        );
         state.activeId = collection.active_id;
         if (
             !state.selectedRun ||
@@ -163,6 +173,19 @@ async function poll() {
             history.innerHTML = choices;
         }
         history.value = state.selectedRun ?? "";
+        const taskSelect = element("request-task-select");
+        const taskChoices =
+            '<option value="">当前所选任务</option>' +
+            collection.runs
+                .map(
+                    (run) =>
+                        `<option value="${run.id}">${escapeText(run.name)} · ${new Date(run.created_at * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}</option>`,
+                )
+                .join("");
+        if (taskSelect.innerHTML !== taskChoices) {
+            taskSelect.innerHTML = taskChoices;
+        }
+        taskSelect.value = state.requestRunId;
         element("stop").disabled = !state.activeId;
         if (state.selectedRun) {
             renderDetail(await api(`/runs/${state.selectedRun}`));
@@ -216,9 +239,6 @@ async function initialize() {
                 .forEach((control) =>
                     control.classList.toggle("selected", control === button),
                 );
-            if (state.mode === "single") {
-                document.querySelector(".reference-panel").open = true;
-            }
             updateEstimate();
         }),
     );
@@ -228,7 +248,7 @@ async function initialize() {
     element("clear-all").addEventListener("click", () => clearRuns(true));
     element("refresh-service").addEventListener("click", refreshService);
     element("speaker").addEventListener("change", updateLines);
-    element("line").addEventListener("change", updateReference);
+    element("line").addEventListener("change", updateEstimate);
     ["qpm", "duration-preset", "duration-value", "duration-unit"].forEach(
         (identifier) =>
             element(identifier).addEventListener("input", updateEstimate),
@@ -251,10 +271,16 @@ async function initialize() {
     });
     element("request-search-form").addEventListener("submit", (event) => {
         event.preventDefault();
+        element("request-task-select").value = "";
+        applyRequestTaskFilter();
+    });
+    element("request-task-select").addEventListener("change", () => {
+        element("request-task-name").value = "";
         applyRequestTaskFilter();
     });
     element("clear-request-search").addEventListener("click", () => {
         element("request-task-name").value = "";
+        element("request-task-select").value = "";
         applyRequestTaskFilter();
     });
     element("previous-page").addEventListener("click", () => {
@@ -288,6 +314,13 @@ async function initialize() {
     element("log-dialog").addEventListener("close", restoreLogWindow);
     element("log-request-form").addEventListener("submit", (event) => {
         event.preventDefault();
+        if (element("log-request-id").value.trim()) {
+            element("log-scope").value = "all";
+        }
+        applyLogRequestFilter();
+    });
+    element("log-scope").addEventListener("change", () => {
+        element("log-request-id").value = "";
         applyLogRequestFilter();
     });
     element("clear-log-request").addEventListener("click", () => {

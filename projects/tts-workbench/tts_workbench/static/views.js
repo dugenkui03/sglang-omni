@@ -106,7 +106,7 @@ function renderDetail(detail) {
 /** Read bounded request pages without inserting untrusted response HTML. */
 async function refreshRequests() {
     const taskName = state.requestTaskName,
-        runId = state.selectedRun,
+        runId = state.requestRunId || state.selectedRun,
         offset = state.offset,
         failuresOnly = element("failures-only").checked;
     if (!runId && !taskName) {
@@ -127,7 +127,7 @@ async function refreshRequests() {
     const page = await api(`${path}?${query}`);
     if (
         taskName !== state.requestTaskName ||
-        runId !== state.selectedRun ||
+        runId !== (state.requestRunId || state.selectedRun) ||
         offset !== state.offset ||
         failuresOnly !== element("failures-only").checked
     ) {
@@ -141,12 +141,15 @@ async function refreshRequests() {
 /** Search task names across stored history while keeping normal task selection intact. */
 function applyRequestTaskFilter() {
     state.requestTaskName = element("request-task-name").value.trim();
+    state.requestRunId = element("request-task-select").value;
     state.offset = 0;
     state.rows = [];
     state.total = 0;
     element("request-search-scope").textContent = state.requestTaskName
         ? `全部历史任务 · 名称包含「${state.requestTaskName}」`
-        : "当前所选任务";
+        : state.requestRunId
+          ? "已选择任务 · 按创建时间倒序"
+          : "当前所选任务";
     element("result-audio").pause();
     element("result-player").hidden = true;
     renderRows();
@@ -170,11 +173,9 @@ function renderRows() {
     updatePlaybackButtons();
 }
 
-/** Render real device readings and distinguish missing hardware from idle GPUs. */
+/** Render device-wide metrics and the rolling thirty-minute monitoring window. */
 async function refreshGpu() {
-    const view = await api(
-        `/gpu${state.selectedRun ? `?run_id=${state.selectedRun}` : ""}`,
-    );
+    const view = await api("/gpu");
     element("gpu-timestamp").textContent = view.current.sampled_at
         ? `更新于 ${shortTime(view.current.sampled_at)}`
         : "等待采样";
@@ -182,28 +183,80 @@ async function refreshGpu() {
         ? view.current.devices
               .map((device) => {
                   const used = device.memory_used_mib,
-                      total = device.memory_total_mib;
-                  return `<article class="gpu-card"><div class="gpu-card-title"><strong>GPU ${escapeText(device.index)} · ${escapeText(device.name)}</strong><span class="pill-small">实时采样</span></div><div class="gpu-fields"><div class="gpu-field"><span>显存占用</span><strong>${used == null ? "—" : (used / 1024).toFixed(1)} <small>/ ${total == null ? "—" : (total / 1024).toFixed(1)} GiB</small></strong><div class="memory-bar"><i style="width:${total && used != null ? Math.min(100, (used / total) * 100) : 0}%"></i></div></div><div class="gpu-field"><span>GPU 利用率</span><strong>${device.utilization_percent ?? "—"}<small> %</small></strong></div><div class="gpu-field"><span>温度</span><strong>${device.temperature_celsius ?? "—"}<small> °C</small></strong></div><div class="gpu-field"><span>功耗</span><strong>${device.power_watts?.toFixed(0) ?? "—"}<small> W</small></strong></div></div></article>`;
+                      total = device.memory_total_mib,
+                      memoryPercent =
+                          total && used != null ? (used / total) * 100 : null;
+                  const metrics = [
+                      [
+                          "显存已用 / 总量",
+                          `${used == null ? "—" : (used / 1024).toFixed(2)} / ${total == null ? "—" : (total / 1024).toFixed(2)}`,
+                          "GiB",
+                          "设备已分配显存与可见总量；1 GiB = 1,024 MiB。",
+                      ],
+                      [
+                          "显存占比",
+                          memoryPercent?.toFixed(1) ?? "—",
+                          "%",
+                          "已用显存 ÷ 总显存，表示容量占用比例。",
+                      ],
+                      [
+                          "估算显存余量",
+                          used == null || total == null
+                              ? "—"
+                              : ((total - used) / 1024).toFixed(2),
+                          "GiB",
+                          "总显存减已用显存；驱动保留会影响实际可分配空间。",
+                      ],
+                      [
+                          "计算利用率",
+                          device.utilization_percent ?? "—",
+                          "%",
+                          "设备采样周期内有计算内核运行的时间占比，不是核心数量占比。",
+                      ],
+                      [
+                          "GPU 温度",
+                          device.temperature_celsius ?? "—",
+                          "°C",
+                          "设备传感器读取的当前 GPU 核心温度。",
+                      ],
+                      [
+                          "GPU 功耗",
+                          device.power_watts?.toFixed(1) ?? "—",
+                          "W",
+                          "驱动报告的整卡功率，包含显存等部件。",
+                      ],
+                  ];
+                  return `<article class="gpu-card"><div class="gpu-card-title"><strong>GPU ${escapeText(device.index)} · ${escapeText(device.name)}</strong><span class="pill-small">每 2 秒采样</span></div><div class="gpu-fields">${metrics.map(([label, value, unit, definition]) => `<div class="gpu-field"><span>${label}</span><strong>${value} <small>${unit}</small></strong><p>${definition}</p></div>`).join("")}</div></article>`;
               })
               .join("")
-        : `<div class="panel empty-state"><span class="empty-icon">▦</span><strong>GPU 指标暂不可用</strong><p>${escapeText(view.current.error ?? "尚未取得采样结果")}</p><p>工作台部署在 NVIDIA GPU 服务器后，将读取该主机的实际指标。</p></div>`;
+        : `<div class="panel empty-state"><span class="empty-icon">▦</span><strong>GPU 指标暂不可用</strong><p>${escapeText(view.current.error ?? "尚未取得采样结果")}</p></div>`;
     const identifiers = [...new Set(view.history.map((sample) => sample.uuid))],
-        colors = ["#6481eb", "#46aba3", "#ca9760", "#a378c5"];
-    drawChart(
-        element("gpu-chart"),
-        identifiers.map((identifier, index) => ({
-            label: `GPU ${view.history.find((sample) => sample.uuid === identifier).index}`,
-            color: colors[index % colors.length],
-            points: view.history
-                .filter((sample) => sample.uuid === identifier)
-                .map((sample) => ({
-                    time: sample.timestamp,
-                    value: sample.utilization_percent,
-                })),
-        })),
-        "%",
-        100,
-    );
+        colors = ["#6481eb", "#46aba3", "#ca9760", "#a378c5"],
+        now = Date.now() / 1000;
+    for (const [chart, field, divisor, unit, maximum] of [
+        ["gpu-chart", "utilization_percent", 1, "%", 100],
+        ["gpu-memory-chart", "memory_used_mib", 1024, "GiB", null],
+    ]) {
+        drawChart(
+            element(chart),
+            identifiers.map((identifier, index) => ({
+                label: `GPU ${view.history.find((sample) => sample.uuid === identifier).index}`,
+                color: colors[index % colors.length],
+                points: view.history
+                    .filter((sample) => sample.uuid === identifier)
+                    .map((sample) => ({
+                        time: sample.timestamp,
+                        value:
+                            sample[field] == null
+                                ? null
+                                : sample[field] / divisor,
+                    })),
+            })),
+            unit,
+            maximum,
+            [now - 30 * 60, now],
+        );
+    }
 }
 
 /** Keep an incremental bounded log window, including file-rotation resets. */
@@ -213,8 +266,16 @@ async function refreshLogs() {
     }
     const controller = new AbortController();
     state.logController = controller;
+    state.logLoading = true;
+    state.logError = "";
+    element("log-status").textContent =
+        state.logRequestId && !state.logCursor
+            ? "正在检索完整日志…"
+            : "正在获取…";
+    renderLogs();
     try {
         const query = new URLSearchParams({ limit: state.logLineLimit });
+        query.set("scope", state.logScope || "all");
         if (state.logCursor) {
             query.set("cursor", state.logCursor);
         }
@@ -232,9 +293,7 @@ async function refreshLogs() {
         }
         element("log-source").textContent = result.source ?? "尚未配置日志文件";
         if (result.error) {
-            element("log-output").textContent = result.error;
-            element("log-status").textContent = "日志暂不可用";
-            return;
+            throw new Error(result.error);
         }
         state.logCursor = result.cursor;
         state.logTruncated = result.reset
@@ -243,15 +302,26 @@ async function refreshLogs() {
         state.logText = (
             (result.reset ? "" : state.logText) + result.text
         ).replace(/\x1b\[[0-9;]*m/g, "");
+        state.logMatchedLines = result.matched_lines ?? null;
         trimLogWindow();
-        element("log-status").textContent = "实时获取";
+        element("log-status").textContent = result.archive_warning
+            ? `已载入历史日志；新增日志暂不可读：${result.archive_warning}`
+            : "实时获取";
         renderLogs();
     } catch (error) {
         if (!controller.signal.aborted) {
-            throw error;
+            state.logError = `日志查询失败：${error.name === "TimeoutError" ? "检索超时" : error.message}。已暂停获取，点击“恢复获取”重试。`;
+            state.logLoading = false;
+            toggleLogFetching();
+            element("log-status").textContent = state.logError;
+            renderLogs();
         }
     } finally {
         state.logController = null;
+        if (!controller.signal.aborted) {
+            state.logLoading = false;
+            renderLogs();
+        }
     }
 }
 
@@ -285,9 +355,13 @@ function restoreLogWindow() {
 function applyLogRequestFilter() {
     state.logController?.abort();
     state.logRequestId = element("log-request-id").value.trim();
+    state.logScope = element("log-scope").value || "all";
     state.logCursor = null;
     state.logText = "";
     state.logTruncated = false;
+    state.logMatchedLines = null;
+    state.logLoading = !state.logsPaused;
+    state.logError = "";
     element("log-filter").value = "";
     const download = element("download-request-log");
     download.hidden = !state.logRequestId;
@@ -310,8 +384,11 @@ function toggleLogFetching() {
         : "实时获取";
     element("log-live-dot").classList.toggle("paused", state.logsPaused);
     if (state.logsPaused) {
+        state.logLoading = false;
         state.logController?.abort();
     } else {
+        state.logLoading = true;
+        state.logError = "";
         state.logCursor = null;
         poll();
     }
@@ -346,7 +423,7 @@ function trimLogWindow() {
     if (trailingNewline) {
         lines.pop();
     }
-    if (state.logRequestId) {
+    if (state.logMatchedLines != null) {
         const records = splitLogRecords(state.logText);
         let retainedLines = 0,
             firstRetained = records.length;
@@ -371,7 +448,7 @@ function trimLogWindow() {
         ? state.logText.replace(/\n$/, "").split("\n").length
         : 0;
     element("log-window-count").textContent =
-        `当前 ${count(retainedCount)} 行 · 保留最近 ${count(state.logLineLimit)} 行，最多 20,000 行。`;
+        `${state.logMatchedLines == null ? "" : `全部历史日志匹配 ${count(state.logMatchedLines)} 行 · `}当前显示 ${count(retainedCount)} 行 · 显示上限 ${count(state.logLineLimit)} 行。`;
     element("log-truncation").hidden = !state.logTruncated;
 }
 
@@ -396,11 +473,17 @@ function renderLogs() {
         : state.logText;
     output.textContent =
         visible ||
-        (state.logsPaused
-            ? "已暂停获取；恢复获取后查询日志。"
-            : state.logRequestId || keyword
-              ? "暂无匹配日志。"
-              : "日志文件已连接，等待新内容…");
+        (state.logError
+            ? state.logError
+            : state.logLoading
+              ? state.logRequestId
+                  ? "正在检索服务器完整日志文件，请稍候…"
+                  : "正在获取日志…"
+              : state.logsPaused
+                ? "已暂停获取；恢复获取后查询日志。"
+                : state.logRequestId || keyword
+                  ? "暂无匹配日志。"
+                  : "日志文件已连接，等待新内容…");
     output.scrollTop = state.logsPaused ? position : output.scrollHeight;
 }
 

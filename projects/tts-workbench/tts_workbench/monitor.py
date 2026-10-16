@@ -8,7 +8,6 @@ import io
 import logging
 import sqlite3
 import time
-from collections import deque
 from pathlib import Path
 
 import httpx
@@ -48,6 +47,8 @@ class LogTail(BaseModel):
     reset: bool = False
     truncated: bool = False
     error: str | None = None
+    matched_lines: int | None = None
+    archive_warning: str | None = None
 
 
 class ModelCard(BaseModel):
@@ -154,11 +155,10 @@ class GpuMonitor:
     """Sample every visible NVIDIA device without loading CUDA libraries."""
 
     def __init__(self, store: Store, runner: Runner) -> None:
-        """Bound live history to 30 minutes while persisting active-run history."""
+        """Keep current telemetry in memory and persist history through the store."""
         self.store = store
         self.runner = runner
         self.current = GpuState()
-        self.history: deque[list[GpuSample]] = deque(maxlen=900)
         self.stop = asyncio.Event()
 
     async def sample(self) -> GpuState:
@@ -222,20 +222,13 @@ class GpuMonitor:
         while not self.stop.is_set():
             self.current = await self.sample()
             if self.current.devices:
-                self.history.append(self.current.devices)
-                run_id = self.runner.active_id
-                if run_id:
-                    try:
-                        await asyncio.to_thread(
-                            self.store.save_gpu, run_id, self.current.devices
-                        )
-                    except sqlite3.Error as exception:
-                        self.current.error = (
-                            f"GPU history could not be saved: {exception}"
-                        )
-                        logger.error(self.current.error)
-                else:
-                    pass
+                try:
+                    await asyncio.to_thread(
+                        self.store.save_gpu, self.runner.active_id, self.current.devices
+                    )
+                except sqlite3.Error as exception:
+                    self.current.error = f"GPU history could not be saved: {exception}"
+                    logger.error(self.current.error)
             else:
                 pass
             try:

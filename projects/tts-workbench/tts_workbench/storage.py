@@ -22,6 +22,7 @@ from tts_workbench.records import (
 from tts_workbench.snapshots import HttpSnapshots
 
 ACTIVE_STATUSES = ("running", "stopping")
+GPU_HISTORY_SECONDS = 30 * 60
 
 
 class Store:
@@ -78,6 +79,12 @@ class Store:
                 utilization_percent REAL, temperature_celsius REAL, power_watts REAL
             );
             CREATE INDEX IF NOT EXISTS gpu_run_time ON gpu_samples(run_id, timestamp);
+            CREATE TABLE IF NOT EXISTS gpu_recent (
+                timestamp REAL NOT NULL, uuid TEXT NOT NULL, "index" TEXT NOT NULL,
+                name TEXT NOT NULL, memory_used_mib REAL, memory_total_mib REAL,
+                utilization_percent REAL, temperature_celsius REAL, power_watts REAL,
+                PRIMARY KEY(timestamp,uuid)
+            );
         """
         )
 
@@ -257,7 +264,7 @@ class Store:
             ).fetchone()[0]
             rows = self.connection.execute(
                 f"SELECT requests.*, runs.name AS run_name {source} "
-                "ORDER BY requests.started_at DESC, requests.sequence DESC, requests.id DESC LIMIT ? OFFSET ?",
+                "ORDER BY runs.created_at DESC, runs.id DESC, requests.started_at DESC, requests.sequence DESC, requests.id DESC LIMIT ? OFFSET ?",
                 [*parameters, limit, offset],
             ).fetchall()
             return RequestPage(
@@ -363,13 +370,31 @@ class Store:
             ).fetchall()
             return [TimelinePoint.model_validate(dict(row)) for row in rows]
 
-    def save_gpu(self, run_id: str, samples: list[GpuSample]) -> None:
-        """Store GPU samples only while a task is active."""
+    def save_gpu(self, run_id: str | None, samples: list[GpuSample]) -> None:
+        """Retain a server-wide 30-minute window as well as active task history."""
         with self.lock, self.connection:
             self.connection.executemany(
-                "INSERT INTO gpu_samples VALUES(?,?,?,?,?,?,?,?,?,?)",
-                [(run_id, *sample.model_dump().values()) for sample in samples],
+                "INSERT OR REPLACE INTO gpu_recent VALUES(?,?,?,?,?,?,?,?,?)",
+                [tuple(sample.model_dump().values()) for sample in samples],
             )
+            self.connection.execute(
+                "DELETE FROM gpu_recent WHERE timestamp<?",
+                (time.time() - GPU_HISTORY_SECONDS,),
+            )
+            if run_id:
+                self.connection.executemany(
+                    "INSERT INTO gpu_samples VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    [(run_id, *sample.model_dump().values()) for sample in samples],
+                )
+
+    def recent_gpu_history(self) -> list[GpuSample]:
+        """Read the rolling window independently of task selection or process restarts."""
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT * FROM gpu_recent WHERE timestamp>=? ORDER BY timestamp",
+                (time.time() - GPU_HISTORY_SECONDS,),
+            ).fetchall()
+            return [GpuSample.model_validate(dict(row)) for row in rows]
 
     def gpu_history(self, run_id: str) -> list[GpuSample]:
         """Downsample historical GPU observations to at most 241 points per card."""

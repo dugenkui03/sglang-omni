@@ -1,121 +1,285 @@
-"""Read complete records for one service request from the configured log file."""
+"""Archive complete service log records and index their request identities in SQLite."""
 
+import asyncio
 import hashlib
+import logging
 import os
 import re
-from collections import deque
+import sqlite3
+import threading
 from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Literal
 
 from tts_workbench.monitor import MAX_LOG_BYTES, LogTail
 
+logger = logging.getLogger(__name__)
 LOG_HEADER = re.compile(
-    r"^\[\d{2}:\d{2}:\d{2}\] (?:DEBUG|INFO|WARNING|ERROR|CRITICAL)\b"
+    rb"^(?:\x1b\[[0-9;]*m)*\[\d{2}:\d{2}:\d{2}\] (?:DEBUG|INFO|WARNING|ERROR|CRITICAL)\b",
+    re.MULTILINE,
 )
-REQUEST_IDS = re.compile(r"^  request_ids?=(.+)$", re.MULTILINE)
-ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+REQUEST_IDS = re.compile(rb"^  request_ids?=(.+)$", re.MULTILINE)
+ANSI_ESCAPE = re.compile(rb"\x1b\[[0-9;]*m")
+SCAN_CHUNK_BYTES = 1024 * 1024
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
+SYNC_INTERVAL_SECONDS = 2
 
 
-def log_records(stream: BinaryIO, end_offset: int) -> Iterator[tuple[int, str]]:
-    """Yield whole formatted records, retaining an unfinished final record for polling."""
-    lines: list[str] = []
-    while stream.tell() < end_offset:
-        offset = stream.tell()
-        raw_line = stream.readline(end_offset - offset)
-        if not raw_line:
+def log_records(stream: BinaryIO, end_offset: int) -> Iterator[tuple[int, bytes]]:
+    """Keep complete multiline records across chunk boundaries and partial writes."""
+    buffer = b""
+    buffer_offset = stream.tell()
+    remaining_bytes = end_offset - buffer_offset
+    while remaining_bytes > 0:
+        chunk = stream.read(min(SCAN_CHUNK_BYTES, remaining_bytes))
+        if not chunk:
             break
-        line = ANSI_ESCAPE.sub("", raw_line.decode("utf-8", errors="replace"))
-        if LOG_HEADER.match(line) and lines:
-            yield offset, "".join(lines)
-            lines = []
-        lines.append(line)
-    if lines and "".join(lines[-2:]).endswith("\n\n"):
-        yield stream.tell(), "".join(lines)
+        remaining_bytes -= len(chunk)
+        buffer += chunk
+        record_start = 0
+        for header in LOG_HEADER.finditer(buffer):
+            if header.start() > record_start:
+                yield buffer_offset + header.start(), buffer[
+                    record_start : header.start()
+                ]
+            record_start = header.start()
+        buffer = buffer[record_start:]
+        buffer_offset += record_start
+    if ANSI_ESCAPE.sub(b"", buffer).endswith(b"\n\n") or (
+        not LOG_HEADER.match(buffer) and buffer.endswith(b"\n")
+    ):
+        yield buffer_offset + len(buffer), buffer
 
 
-def matches_request(record: str, request_id: str) -> bool:
-    """Match exact single or batch identities without matching message substrings."""
-    match = REQUEST_IDS.search(record)
-    return bool(
-        match
-        and request_id
-        in [value.strip() for value in match.group(1).strip("[]").split(",")]
-    )
+class LogArchive:
+    """Preserve log history separately from deletable test results and audio samples."""
 
+    def __init__(self, root: Path, source: Path | None) -> None:
+        """Create a WAL database with exact request-ID membership indexes."""
+        root.mkdir(parents=True, exist_ok=True)
+        self.database_path = root / "logs.sqlite3"
+        self.source = source.resolve() if source is not None else None
+        self.lock = threading.RLock()
+        self.stop = asyncio.Event()
+        self.error: str | None = None
+        self.connection = sqlite3.connect(self.database_path, check_same_thread=False)
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA journal_mode=WAL")
+        self.connection.execute("PRAGMA busy_timeout=5000")
+        self.connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS log_sources (
+                path TEXT PRIMARY KEY, identity TEXT NOT NULL,
+                byte_offset INTEGER NOT NULL, fingerprint TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS log_records (
+                id INTEGER PRIMARY KEY, source_path TEXT NOT NULL,
+                text TEXT NOT NULL, line_count INTEGER NOT NULL, byte_count INTEGER NOT NULL,
+                category TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS log_category_id ON log_records(category,id);
+            CREATE TABLE IF NOT EXISTS log_totals (
+                category TEXT PRIMARY KEY, line_count INTEGER NOT NULL, latest_id INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS log_requests (
+                request_id TEXT NOT NULL, record_id INTEGER NOT NULL REFERENCES log_records(id),
+                PRIMARY KEY(request_id, record_id)
+            ) WITHOUT ROWID;
+            """
+        )
 
-def tail_request_log(
-    path: Path | None, cursor: str | None, request_id: str, limit: int
-) -> LogTail:
-    """Search the full file once, then follow complete records using a scoped cursor."""
-    if path is None:
-        return LogTail(source=None, error="No TTS log file was configured")
-    try:
-        with path.open("rb") as stream:
-            metadata = os.fstat(stream.fileno())
-            identity = f"{metadata.st_dev}:{metadata.st_ino}"
-            filter_hash = hashlib.sha256(request_id.encode()).hexdigest()[:16]
-            offset = 0
-            reset = True
-            if cursor:
-                parts = cursor.split(":")
-                if len(parts) != 5:
-                    raise ValueError("Invalid request log cursor")
-                previous_offset = int(parts[2])
+    def close(self) -> None:
+        """Release the archive only after background ingestion and readers finish."""
+        with self.lock:
+            self.connection.close()
+
+    def synchronize(self) -> None:
+        """Atomically save appended records and their byte checkpoint without reindexing history."""
+        if self.source is None:
+            self.error = "No TTS log file was configured"
+            return
+        try:
+            with self.lock, self.connection, self.source.open("rb") as stream:
+                metadata = os.fstat(stream.fileno())
+                identity = f"{metadata.st_dev}:{metadata.st_ino}"
+                source_path = str(self.source)
+                previous = self.connection.execute(
+                    "SELECT * FROM log_sources WHERE path=?", (source_path,)
+                ).fetchone()
+                offset = 0
                 if (
-                    ":".join(parts[:2]) == identity
-                    and parts[4] == filter_hash
-                    and 0 <= previous_offset <= metadata.st_size
+                    previous is not None
+                    and previous["identity"] == identity
+                    and previous["byte_offset"] <= metadata.st_size
                 ):
+                    previous_offset = previous["byte_offset"]
                     stream.seek(max(0, previous_offset - 32))
                     fingerprint = hashlib.sha256(
                         stream.read(min(32, previous_offset))
-                    ).hexdigest()[:16]
-                    if fingerprint == parts[3]:
+                    ).hexdigest()
+                    if fingerprint == previous["fingerprint"]:
                         offset = previous_offset
-                        reset = False
-            stream.seek(offset)
-            retained: deque[tuple[str, int, int]] = deque()
+                stream.seek(offset)
+                category_totals: dict[str, tuple[int, int]] = {}
+                for offset, raw_record in log_records(stream, metadata.st_size):
+                    raw_record = ANSI_ESCAPE.sub(b"", raw_record)
+                    text = raw_record.decode("utf-8", errors="replace")
+                    match = REQUEST_IDS.search(raw_record)
+                    identities = (
+                        {
+                            value.strip().decode("utf-8", errors="replace")
+                            for value in match.group(1).strip(b"[]").split(b",")
+                        }
+                        - {"-", ""}
+                        if match
+                        else set()
+                    )
+                    category = (
+                        "inference"
+                        if any(value.startswith("speech-") for value in identities)
+                        else "http" if identities else "system"
+                    )
+                    line_count = len(text.splitlines())
+                    inserted = self.connection.execute(
+                        "INSERT INTO log_records(source_path,text,line_count,byte_count,category) VALUES(?,?,?,?,?)",
+                        (source_path, text, line_count, len(raw_record), category),
+                    )
+                    record_id = inserted.lastrowid
+                    assert record_id is not None
+                    category_totals[category] = (
+                        category_totals.get(category, (0, 0))[0] + line_count,
+                        record_id,
+                    )
+                    if identities:
+                        self.connection.executemany(
+                            "INSERT INTO log_requests(request_id,record_id) VALUES(?,?)",
+                            [(request_id, record_id) for request_id in identities],
+                        )
+                self.connection.executemany(
+                    "INSERT INTO log_totals VALUES(?,?,?) ON CONFLICT(category) DO UPDATE SET "
+                    "line_count=log_totals.line_count+excluded.line_count,latest_id=excluded.latest_id",
+                    [
+                        (category, count, latest)
+                        for category, (count, latest) in category_totals.items()
+                    ],
+                )
+                stream.seek(max(0, offset - 32))
+                fingerprint = hashlib.sha256(stream.read(min(32, offset))).hexdigest()
+                self.connection.execute(
+                    "INSERT INTO log_sources VALUES(?,?,?,?) ON CONFLICT(path) DO UPDATE SET "
+                    "identity=excluded.identity,byte_offset=excluded.byte_offset,fingerprint=excluded.fingerprint",
+                    (source_path, identity, offset, fingerprint),
+                )
+                self.error = None
+        except OSError as exception:
+            message = f"Log ingestion unavailable: {exception}"
+            if self.error != message:
+                logger.warning(message)
+            self.error = message
+
+    async def run(self) -> None:
+        """Ingest independently of browser tabs so history survives log rotation."""
+        while not self.stop.is_set():
+            try:
+                await asyncio.to_thread(self.synchronize)
+            except sqlite3.Error as exception:
+                self.error = f"Log archive unavailable: {exception}"
+                logger.error(self.error)
+            try:
+                await asyncio.wait_for(self.stop.wait(), timeout=SYNC_INTERVAL_SECONDS)
+            except asyncio.TimeoutError:
+                pass
+
+    def tail(
+        self,
+        cursor: str | None,
+        request_id: str | None,
+        limit: int,
+        scope: Literal["all", "system", "inference"] = "all",
+    ) -> LogTail:
+        """Query all archived history; only the returned display window is bounded."""
+        self.synchronize()
+        filter_hash = hashlib.sha256(
+            f"{scope}:{request_id or ''}".encode()
+        ).hexdigest()[:16]
+        offset = 0
+        reset = True
+        if cursor:
+            parts = cursor.split(":")
+            if len(parts) == 3 and parts[0] == "sqlite" and parts[2] == filter_hash:
+                offset = int(parts[1])
+                reset = False
+        with self.lock:
+            source = "FROM log_records AS records"
+            conditions: list[str] = []
+            parameters: list[str | int] = []
+            if request_id:
+                source += (
+                    " JOIN log_requests AS requests ON records.id=requests.record_id"
+                )
+                conditions.append("requests.request_id=?")
+                parameters.append(request_id)
+            if scope != "all":
+                conditions.append("category=?")
+                parameters.append(scope)
+            predicate = " AND ".join(conditions) or "1=1"
+            if request_id:
+                totals = self.connection.execute(
+                    f"SELECT COALESCE(MAX(records.id),0),COALESCE(SUM(records.line_count),0) {source} WHERE {predicate}",
+                    parameters,
+                ).fetchone()
+            else:
+                totals = self.connection.execute(
+                    f"SELECT COALESCE(MAX(latest_id),0),COALESCE(SUM(line_count),0) FROM log_totals WHERE {predicate}",
+                    parameters,
+                ).fetchone()
+            latest_id, matched_lines = totals
+            if offset > latest_id:
+                offset = 0
+                reset = True
+            rows = self.connection.execute(
+                f"SELECT records.* {source} WHERE {predicate} AND records.id>? ORDER BY records.id DESC",
+                [*parameters, offset],
+            )
+            retained: list[str] = []
             line_count = byte_count = 0
             truncated = False
-            for offset, record in log_records(stream, metadata.st_size):
-                if matches_request(record, request_id):
-                    record_lines = len(record.splitlines())
-                    record_bytes = len(record.encode())
-                    retained.append((record, record_lines, record_bytes))
-                    line_count += record_lines
-                    byte_count += record_bytes
-                    while retained and (
-                        line_count > limit or byte_count > MAX_LOG_BYTES
-                    ):
-                        _, removed_lines, removed_bytes = retained.popleft()
-                        line_count -= removed_lines
-                        byte_count -= removed_bytes
-                        truncated = True
-            stream.seek(max(0, offset - 32))
-            fingerprint = hashlib.sha256(stream.read(min(32, offset))).hexdigest()[:16]
+            for row in rows:
+                if (
+                    line_count + row["line_count"] > limit
+                    or byte_count + row["byte_count"] > MAX_LOG_BYTES
+                ):
+                    truncated = True
+                    break
+                retained.append(row["text"])
+                line_count += row["line_count"]
+                byte_count += row["byte_count"]
             return LogTail(
-                source=path.name,
-                cursor=f"{identity}:{offset}:{fingerprint}:{filter_hash}",
-                text="".join(record for record, _, _ in retained),
+                source=f"{self.source.name if self.source else '服务日志'} · SQLite 历史",
+                cursor=f"sqlite:{latest_id}:{filter_hash}",
+                text="".join(reversed(retained)),
                 reset=reset or truncated,
                 truncated=truncated,
+                matched_lines=matched_lines,
+                archive_warning=self.error,
             )
-    except (OSError, ValueError) as exception:
-        return LogTail(source=path.name, error=f"Log file unavailable: {exception}")
 
-
-def download_request_log(path: Path, request_id: str) -> Iterator[bytes]:
-    """Stream every matching record present at download start without a display limit."""
-    with path.open("rb") as stream:
-        end_offset = os.fstat(stream.fileno()).st_size
-        output = bytearray()
-        for _, record in log_records(stream, end_offset):
-            if matches_request(record, request_id):
-                output.extend(record.encode())
+    def download(self, request_id: str) -> Iterator[bytes]:
+        """Stream the complete indexed history from a read snapshot without blocking ingestion."""
+        self.synchronize()
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            rows = connection.execute(
+                "SELECT records.text FROM log_requests AS requests "
+                "JOIN log_records AS records ON records.id=requests.record_id "
+                "WHERE requests.request_id=? ORDER BY records.id",
+                (request_id,),
+            )
+            output = bytearray()
+            for row in rows:
+                output.extend(row[0].encode())
                 if len(output) >= DOWNLOAD_CHUNK_BYTES:
                     yield bytes(output)
                     output.clear()
-        if output:
-            yield bytes(output)
+            if output:
+                yield bytes(output)

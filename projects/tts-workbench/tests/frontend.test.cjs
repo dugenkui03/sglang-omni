@@ -13,6 +13,9 @@ function harness() {
         logText: "",
         logsPaused: false,
         logController: null,
+        logLoading: false,
+        logError: "",
+        logMatchedLines: null,
         rows: [],
     };
     /** Resolve a stable element so asynchronous responses affect the same view. */
@@ -138,6 +141,7 @@ test("keyword matching keeps the whole multiline log record", () => {
     context.renderLogs();
     assert.equal(element("log-output").textContent, first);
     state.logRequestId = "speech-a";
+    state.logMatchedLines = 12;
     state.logLineLimit = 7;
     context.trimLogWindow();
     assert.equal(state.logText, second);
@@ -180,4 +184,44 @@ test("automatic names stay previews while edits survive a pending name fetch", a
     await context.generateRunName();
     assert.equal(element("run-name").value, "model-002");
     assert.equal(state.generatedRunName, "model-002");
+});
+
+test("pending full-history searches show progress and report archived match counts", async () => {
+    const { state, element, context } = harness();
+    state.logRequestId = "speech-a";
+    let resolve;
+    context.api = () =>
+        new Promise((done) => {
+            resolve = done;
+        });
+    const pending = context.refreshLogs();
+    assert.match(element("log-output").textContent, /正在检索/);
+    resolve({
+        source: "server.log",
+        cursor: "next",
+        text: "",
+        reset: true,
+        matched_lines: 25000,
+        truncated: true,
+    });
+    await pending;
+    assert.equal(state.logLoading, false);
+    assert.match(element("log-window-count").textContent, /25000/);
+});
+
+test("a failed log query reports its error and stops automatic retry storms", async () => {
+    const { state, element, context } = harness();
+    let calls = 0;
+    context.api = async () => {
+        calls += 1;
+        const error = new Error("deadline");
+        error.name = "TimeoutError";
+        throw error;
+    };
+    await context.refreshLogs();
+    await context.refreshLogs();
+    assert.equal(calls, 1);
+    assert.equal(state.logsPaused, true);
+    assert.match(element("log-output").textContent, /检索超时/);
+    assert.doesNotMatch(element("log-output").textContent, /暂无匹配/);
 });

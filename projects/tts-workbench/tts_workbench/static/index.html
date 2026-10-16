@@ -113,22 +113,10 @@
                                 class="warning-text"
                             ></span>
                         </div>
-                        <details class="reference-panel">
-                            <summary>查看台词与参考音频 <span>⌄</span></summary>
-                            <select
-                                id="line"
-                                aria-label="选择预览或试跑的台词"
-                            ></select>
-                            <div
-                                id="reference-text"
-                                class="reference-text"
-                            ></div>
-                            <audio
-                                id="reference-audio"
-                                controls
-                                preload="none"
-                            ></audio>
-                        </details>
+                        <div id="single-line-field" hidden>
+                            <label for="line">试跑台词</label>
+                            <select id="line"></select>
+                        </div>
                         <label for="qpm">请求频率 <small>QPM</small></label
                         ><input
                             id="qpm"
@@ -253,16 +241,16 @@
                             运行概览</button
                         ><button
                             role="tab"
-                            data-tab="requests"
-                            aria-selected="false"
-                        >
-                            请求记录</button
-                        ><button
-                            role="tab"
                             data-tab="gpu"
                             aria-selected="false"
                         >
                             GPU 监控</button
+                        ><button
+                            role="tab"
+                            data-tab="requests"
+                            aria-selected="false"
+                        >
+                            请求记录</button
                         ><button
                             role="tab"
                             data-tab="logs"
@@ -348,9 +336,15 @@
                         </div>
                         <form id="request-search-form" class="request-search">
                             <label for="request-task-name">任务名称</label>
+                            <select
+                                id="request-task-select"
+                                aria-label="按任务创建时间选择，最新在前"
+                            >
+                                <option value="">当前所选任务</option>
+                            </select>
                             <input
                                 id="request-task-name"
-                                placeholder="输入部分任务名称，搜索全部历史请求"
+                                placeholder="输入名称，搜索全部历史任务"
                                 maxlength="100"
                                 autocomplete="off"
                             />
@@ -419,7 +413,10 @@
                         <div class="gpu-heading">
                             <div>
                                 <h3>服务器 GPU</h3>
-                                <p>设备级利用率与显存 · 每 2 秒采样</p>
+                                <p>
+                                    整张 GPU（含其他进程）· nvidia-smi 每 2
+                                    秒采样 · 最近 30 分钟
+                                </p>
                             </div>
                             <span id="gpu-timestamp" class="muted small"
                                 >等待采样</span
@@ -428,13 +425,26 @@
                         <div id="gpu-devices"></div>
                         <article class="panel chart-panel gpu-chart-panel">
                             <div class="chart-title">
-                                <h3>GPU 利用率趋势</h3>
+                                <h3>计算利用率趋势</h3>
                                 <span class="chart-legend"
-                                    >所选任务期间 · %</span
+                                    >最近 30 分钟 · %</span
                                 >
                             </div>
                             <div id="gpu-chart" class="chart"></div>
                         </article>
+                        <article class="panel chart-panel gpu-chart-panel">
+                            <div class="chart-title">
+                                <h3>显存使用趋势</h3>
+                                <span class="chart-legend"
+                                    >最近 30 分钟 · GiB</span
+                                >
+                            </div>
+                            <div id="gpu-memory-chart" class="chart"></div>
+                        </article>
+                        <p class="gpu-history-note">
+                            未采集到的时段留空；历史采样保存在
+                            SQLite，页面关闭后继续采集。
+                        </p>
                     </section>
                     <div id="log-home">
                         <section
@@ -469,10 +479,19 @@
                                 id="log-request-form"
                                 class="log-request-filter"
                             >
+                                <select id="log-scope" aria-label="日志范围">
+                                    <option value="all">全部日志</option>
+                                    <option value="system">
+                                        启动 / 系统日志
+                                    </option>
+                                    <option value="inference">
+                                        推理请求日志
+                                    </option>
+                                </select>
                                 <label for="log-request-id">请求 ID</label>
                                 <input
                                     id="log-request-id"
-                                    placeholder="输入完整 request_id，查询原始日志"
+                                    placeholder="输入完整 request_id，查询全部历史日志"
                                     maxlength="200"
                                     autocomplete="off"
                                 />
@@ -524,7 +543,8 @@
                                 <span id="log-window-count"
                                     >保留最近 20,000 行，最多 20,000 行。</span
                                 >
-                                原始日志文件不受清理测试结果影响。
+                                SQLite
+                                保存完整日志；原始文件和日志归档不受清理测试结果影响。
                                 <span id="log-truncation" hidden
                                     >窗口已截取；下载可查看该请求全部日志。</span
                                 >

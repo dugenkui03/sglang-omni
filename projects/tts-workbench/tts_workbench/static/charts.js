@@ -27,7 +27,13 @@ function shortTime(timestamp) {
 }
 
 /** Draw bounded series with axis units and a truthful empty state. */
-function drawChart(element, series, unit, fixedMaximum = null) {
+function drawChart(
+    element,
+    series,
+    unit,
+    fixedMaximum = null,
+    timeRange = null,
+) {
     const points = series
         .flatMap((line) => line.points)
         .filter((point) => Number.isFinite(point.value));
@@ -42,11 +48,11 @@ function drawChart(element, series, unit, fixedMaximum = null) {
         right = 9,
         top = 15,
         bottom = 25;
-    const minimumTime = Math.min(...points.map((point) => point.time));
-    const maximumTime = Math.max(
-        minimumTime + 1,
-        ...points.map((point) => point.time),
-    );
+    const minimumTime =
+        timeRange?.[0] ?? Math.min(...points.map((point) => point.time));
+    const maximumTime =
+        timeRange?.[1] ??
+        Math.max(minimumTime + 1, ...points.map((point) => point.time));
     const maximumValue =
         fixedMaximum ??
         Math.max(1, ...points.map((point) => point.value)) * 1.15;

@@ -9,12 +9,11 @@ import pytest
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
-from starlette.types import Message, Receive, Scope, Send
-
 from sglang_omni.http.request_logging import RequestLoggingApp
 from sglang_omni.scheduling.threaded_simple_scheduler import ThreadedSimpleScheduler
-from sglang_omni.utils.logging import DebugLogFormatter
+from sglang_omni.utils.logging import DebugLogFormatter, PollingAccessFilter
 from sglang_omni.utils.request_context import current_request_label, request_log_context
+from starlette.types import Message, Receive, Scope, Send
 
 
 def formatted_log() -> str:
@@ -23,6 +22,33 @@ def formatted_log() -> str:
         "test", logging.INFO, "model.py", 312, "Forward complete", (), None
     )
     return DebugLogFormatter().format(record)
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "status_code", "visible"),
+    [
+        ("GET", "/health", 200, False),
+        ("GET", "/v1/models?refresh=1", 200, False),
+        ("GET", "/health", 503, True),
+        ("GET", "/v1/models", 500, True),
+        ("POST", "/v1/audio/speech", 200, True),
+        ("GET", "/other", 200, True),
+    ],
+)
+def test_polling_access_filter(
+    method: str, path: str, status_code: int, visible: bool
+) -> None:
+    """Quiet successful polling while retaining failed checks and generation requests."""
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        "h11_impl.py",
+        477,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:1234", method, path, "1.1", status_code),
+        None,
+    )
+    assert PollingAccessFilter().filter(record) is visible
 
 
 def test_request_line_batch_and_exception_cleanup() -> None:

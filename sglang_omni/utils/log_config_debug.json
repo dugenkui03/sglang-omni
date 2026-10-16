@@ -1,6 +1,11 @@
 {
   "version": 1,
   "disable_existing_loggers": false,
+  "filters": {
+    "polling_access": {
+      "()": "sglang_omni.utils.logging.PollingAccessFilter"
+    }
+  },
   "formatters": {
     "detail": {
       "()": "sglang_omni.utils.logging.DebugLogFormatter"
@@ -16,7 +21,7 @@
   "loggers": {
     "uvicorn": {"handlers": [], "propagate": true},
     "uvicorn.error": {"handlers": [], "propagate": true},
-    "uvicorn.access": {"handlers": [], "propagate": true}
+    "uvicorn.access": {"handlers": [], "propagate": true, "filters": ["polling_access"]}
   },
   "root": {
     "level": "INFO",

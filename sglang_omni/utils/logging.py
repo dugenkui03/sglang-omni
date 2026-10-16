@@ -11,8 +11,29 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from huggingface_hub.utils import logging as hf_logging
-
 from sglang_omni.utils.request_context import current_request_label
+
+
+class PollingAccessFilter(logging.Filter):
+    """Suppress successful status polling while preserving errors and inference access."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Use Uvicorn's structured access fields instead of matching rendered text."""
+        if (
+            record.name == "uvicorn.access"
+            and record.levelno < logging.WARNING
+            and isinstance(record.args, tuple)
+            and len(record.args) == 5
+        ):
+            _, method, path, _, status_code = record.args
+            return not (
+                method == "GET"
+                and isinstance(path, str)
+                and path.partition("?")[0] in {"/health", "/v1/models"}
+                and status_code == 200
+            )
+        else:
+            return True
 
 
 class DebugLogFormatter(logging.Formatter):

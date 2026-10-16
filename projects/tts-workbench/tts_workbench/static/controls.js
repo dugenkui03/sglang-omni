@@ -81,28 +81,6 @@ function updateLines() {
     if (lines.some((line) => line.line_id === previous)) {
         element("line").value = previous;
     }
-    updateReference();
-    updateEstimate();
-}
-
-/** Preview the actual Chinese reference and language-specific target text. */
-function updateReference() {
-    const line = state.catalog?.lines.find(
-        (row) => row.line_id === element("line").value,
-    );
-    const audio = element("reference-audio");
-    if (line) {
-        element("reference-text").innerHTML =
-            `<div>${escapeText(line.speaker)}：${escapeText(line.text_zh)}</div><div class="english">${escapeText(line.text_en_tts)}</div>${line.reference_text_needs_review ? '<span class="warning-text">此参考片段曾扩窗，参考转写需要复核。</span>' : ""}`;
-        if (audio.dataset.line !== line.line_id) {
-            audio.src = `${API}/references/${encodeURIComponent(line.line_id)}`;
-            audio.dataset.line = line.line_id;
-        }
-    } else {
-        element("reference-text").textContent = "未选择素材";
-        audio.removeAttribute("src");
-        delete audio.dataset.line;
-    }
     updateEstimate();
 }
 
@@ -131,6 +109,7 @@ function updateEstimate() {
         ? `${effectiveLines.filter((line) => line.reference_text_needs_review).length} 条参考待复核`
         : "";
     element("duration-fields").hidden = state.mode !== "duration";
+    element("single-line-field").hidden = state.mode !== "single";
     element("custom-duration").hidden =
         element("duration-preset").value !== "custom";
     const expected =
@@ -215,6 +194,7 @@ async function clearRuns(all) {
             { method: "DELETE" },
         );
         state.selectedRun = null;
+        state.requestRunId = "";
         state.detail = null;
         state.offset = 0;
         localStorage.removeItem("workbench-run");

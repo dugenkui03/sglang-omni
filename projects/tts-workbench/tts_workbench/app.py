@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
 import httpx
@@ -29,7 +29,6 @@ from tts_workbench.monitor import (
     LogTail,
     ServiceMonitor,
     ServiceState,
-    tail_log,
 )
 from tts_workbench.records import (
     EventRecord,
@@ -38,7 +37,7 @@ from tts_workbench.records import (
     RunStatistics,
     TimelinePoint,
 )
-from tts_workbench.request_logs import download_request_log, tail_request_log
+from tts_workbench.request_logs import LogArchive
 from tts_workbench.runner import Runner
 from tts_workbench.snapshots import HttpRequestDetails
 from tts_workbench.speech import create_speech_payload
@@ -65,6 +64,7 @@ class Runtime:
     runner: Runner
     gpu: GpuMonitor
     service: ServiceMonitor
+    logs: LogArchive
 
 
 class RunCollection(BaseModel):
@@ -126,20 +126,25 @@ def create_app(settings: Settings) -> FastAPI:
             ) as client:
                 runner = Runner(settings, dataset, store, client)
                 gpu = GpuMonitor(store, runner)
+                logs = LogArchive(settings.results_directory, settings.log_file)
                 app.state.runtime = Runtime(
                     dataset,
                     store,
                     runner,
                     gpu,
                     ServiceMonitor(settings.api_base, client),
+                    logs,
                 )
                 gpu_task = asyncio.create_task(gpu.run(), name="gpu-observer")
+                log_task = asyncio.create_task(logs.run(), name="log-archive")
                 try:
                     yield
                 finally:
                     gpu.stop.set()
-                    await gpu_task
+                    logs.stop.set()
+                    await asyncio.gather(gpu_task, log_task)
                     await runner.shutdown()
+                    logs.close()
                     store.close()
 
     app = FastAPI(
@@ -395,33 +400,30 @@ def create_app(settings: Settings) -> FastAPI:
         if run_id:
             history = await asyncio.to_thread(runtime.store.gpu_history, run_id)
         else:
-            packets = list(runtime.gpu.history)
-            stride = max(1, (len(packets) + 239) // 240)
-            history = [sample for packet in packets[::stride] for sample in packet]
+            history = await asyncio.to_thread(runtime.store.recent_gpu_history)
         return GpuView(current=runtime.gpu.current, history=history)
 
     @app.get("/api/workbench/logs")
     async def logs(
+        request: Request,
         cursor: str | None = Query(None, max_length=160),
         limit: int = Query(MAX_LOG_LINES, ge=1, le=MAX_LOG_LINES),
         request_id: str | None = Query(None, min_length=1, max_length=200),
+        scope: Literal["all", "system", "inference"] = "all",
     ) -> LogTail:
         """Follow recent logs or complete records for an exact service request."""
-        if request_id:
-            return await asyncio.to_thread(
-                tail_request_log, settings.log_file, cursor, request_id, limit
-            )
-        return await asyncio.to_thread(tail_log, settings.log_file, cursor, limit)
+        return await asyncio.to_thread(
+            runtime_from(request).logs.tail, cursor, request_id, limit, scope
+        )
 
     @app.get("/api/workbench/logs/download")
     async def download_logs(
+        request: Request,
         request_id: str = Query(min_length=1, max_length=200),
     ) -> StreamingResponse:
-        """Export all matching records from the configured file, beyond the UI limit."""
-        if settings.log_file is None or not settings.log_file.is_file():
-            raise HTTPException(404, "The configured TTS log is unavailable")
+        """Export all archived matching records, including logs from before file rotation."""
         return StreamingResponse(
-            download_request_log(settings.log_file, request_id),
+            runtime_from(request).logs.download(request_id),
             media_type="text/plain; charset=utf-8",
             headers={"Content-Disposition": 'attachment; filename="request-logs.txt"'},
         )
