@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "dataset_id": "zhenhuan_processed_dialogue_5_units",
+  "prepared_date": "2026-10-17",
+  "unit_definition": "One existing processed dubbing unit; an upper or lower part counts as one unit.",
+  "requested_source_project": "/Users/dugenkui/.codex/worktrees/4bec/ai_dubbing",
+  "resolved_source_root": "/Users/dugenkui/workspace/ai_dubbing/test_data/测试输出",
+  "unit_count": 5,
+  "line_count": 272,
+  "reference_audio_duration_seconds": 367.4,
+  "source_timeline_end_seconds_sum": 624.23,
+  "path_base": "All dataset asset paths are relative to tts_test_data; absolute paths are provenance only.",
+  "units": [
+    {
+      "unit_id": "E35_lower",
+      "title": "甄嬛传 E35 下集",
+      "manifest_path": "E35_lower/manifest.json",
+      "lines_path": "E35_lower/lines.jsonl",
+      "line_count": 58,
+      "speaker_count": 2,
+      "reference_audio_duration_seconds": 73.34,
+      "last_dialogue_end_ms": 120970
+    },
+    {
+      "unit_id": "E36_upper",
+      "title": "甄嬛传 E36 上集",
+      "manifest_path": "E36_upper/manifest.json",
+      "lines_path": "E36_upper/lines.jsonl",
+      "line_count": 47,
+      "speaker_count": 2,
+      "reference_audio_duration_seconds": 60.52,
+      "last_dialogue_end_ms": 101780
+    },
+    {
+      "unit_id": "E36_lower",
+      "title": "甄嬛传 E36 下集",
+      "manifest_path": "E36_lower/manifest.json",
+      "lines_path": "E36_lower/lines.jsonl",
+      "line_count": 60,
+      "speaker_count": 5,
+      "reference_audio_duration_seconds": 78.8,
+      "last_dialogue_end_ms": 135780
+    },
+    {
+      "unit_id": "E37_upper",
+      "title": "甄嬛传 E37 上集",
+      "manifest_path": "E37_upper/manifest.json",
+      "lines_path": "E37_upper/lines.jsonl",
+      "line_count": 54,
+      "speaker_count": 2,
+      "reference_audio_duration_seconds": 76.74,
+      "last_dialogue_end_ms": 149920
+    },
+    {
+      "unit_id": "E37_lower",
+      "title": "甄嬛传 E37 下集",
+      "manifest_path": "E37_lower/manifest.json",
+      "lines_path": "E37_lower/lines.jsonl",
+      "line_count": 53,
+      "speaker_count": 2,
+      "reference_audio_duration_seconds": 78.0,
+      "last_dialogue_end_ms": 115780
+    }
+  ]
+}

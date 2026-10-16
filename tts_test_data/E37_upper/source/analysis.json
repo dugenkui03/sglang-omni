@@ -1,0 +1,485 @@
+{
+  "episode": 37120,
+  "speakers": [
+    {
+      "speaker": "甄嬛",
+      "speaker_description": "young#female#后宫妃嫔，沈眉庄的好姐妹，本集向眉庄解释自己提议复原仇敌年氏位分的原因"
+    },
+    {
+      "speaker": "沈眉庄",
+      "speaker_description": "young#female#后宫妃嫔，甄嬛的姐姐，因甄嬛提议给华妃复位一事感到不解和痛心"
+    }
+  ],
+  "dialogue": [
+    {
+      "speaker": "甄嬛",
+      "text_zh": "姐姐宫里怎么连个人影都没有？",
+      "text_en": "Why is there no one here, sister?",
+      "start_ms": 40,
+      "end_ms": 2200,
+      "source": "asr#1"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "那些奴才呢？",
+      "text_en": "Where are the servants?",
+      "start_ms": 3810,
+      "end_ms": 4690,
+      "source": "asr#2"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "怎么不伺候着？",
+      "text_en": "Why are they not serving you?",
+      "start_ms": 5050,
+      "end_ms": 6090,
+      "source": "asr#3"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "今儿是宫中发放夏衣的日子，",
+      "text_en": "Today the palace gives out summer clothes.",
+      "start_ms": 8230,
+      "end_ms": 10230,
+      "source": "asr#4"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "我让他们去内务府领了。",
+      "text_en": "I sent them to the office to get them.",
+      "start_ms": 10630,
+      "end_ms": 12470,
+      "source": "asr#5"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "比不得你宫里家大业大，",
+      "text_en": "Not like your place, so grand and busy.",
+      "start_ms": 13780,
+      "end_ms": 16020,
+      "source": "asr#6"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "人人都上赶着去。",
+      "text_en": "Everyone rushes to go there.",
+      "start_ms": 16460,
+      "end_ms": 17820,
+      "source": "asr#7"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "连内务府主事的姜公公",
+      "text_en": "Even Chief Jiang from the office",
+      "start_ms": 18580,
+      "end_ms": 20420,
+      "source": "asr#8"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "都亲自上门送奴才们的衣裳。",
+      "text_en": "came personally to deliver the servants' clothes.",
+      "start_ms": 20660,
+      "end_ms": 22700,
+      "source": "asr#9"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "我知道，",
+      "text_en": "I know.",
+      "start_ms": 24330,
+      "end_ms": 24930,
+      "source": "asr#10"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "姐姐不是在意皇上的宠幸。",
+      "text_en": "You are not concerned about the Emperor's favor.",
+      "start_ms": 26090,
+      "end_ms": 28130,
+      "source": "asr#11"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "姐姐这样说，",
+      "text_en": "You say this,",
+      "start_ms": 31520,
+      "end_ms": 32440,
+      "source": "asr#12"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "可是为了华妃复位一事？",
+      "text_en": "is it about restoring Hua Fei?",
+      "start_ms": 34330,
+      "end_ms": 35850,
+      "source": "asr#13"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "好，",
+      "text_en": "Fine.",
+      "start_ms": 41330,
+      "end_ms": 41650,
+      "source": "asr#14"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "那我问你，",
+      "text_en": "Then I ask you,",
+      "start_ms": 42210,
+      "end_ms": 43090,
+      "source": "asr#15"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "华妃复位之事，是不是你向皇上提议？",
+      "text_en": "Did you suggest to the Emperor to restore Hua Fei?",
+      "start_ms": 43650,
+      "end_ms": 46610,
+      "source": "asr#16"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "是。",
+      "text_en": "Yes.",
+      "start_ms": 47410,
+      "end_ms": 47770,
+      "source": "asr#17"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "可是姐姐，",
+      "text_en": "But sister,",
+      "start_ms": 49110,
+      "end_ms": 49790,
+      "source": "asr#18"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "我也是不得已。",
+      "text_en": "I had no choice.",
+      "start_ms": 50470,
+      "end_ms": 51550,
+      "source": "asr#19"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "谁愿意捧了杀了自己孩子的仇敌上位？",
+      "text_en": "Who would want to elevate the enemy who killed my child?",
+      "start_ms": 52670,
+      "end_ms": 55030,
+      "source": "asr#20"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "也请姐姐为我想一想，",
+      "text_en": "Please think for me, sister.",
+      "start_ms": 56110,
+      "end_ms": 57630,
+      "source": "asr#21"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "若不是情非得已，",
+      "text_en": "If I were not forced,",
+      "start_ms": 58550,
+      "end_ms": 59790,
+      "source": "asr#22"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "我何必走这一遭？",
+      "text_en": "why would I do this?",
+      "start_ms": 60510,
+      "end_ms": 61590,
+      "source": "asr#23"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "姐姐不能容忍的，",
+      "text_en": "What you cannot bear,",
+      "start_ms": 63120,
+      "end_ms": 64240,
+      "source": "asr#24"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "妹妹我身受之苦并不亚于姐姐，",
+      "text_en": "my suffering is no less [painful] than yours.",
+      "start_ms": 64720,
+      "end_ms": 67240,
+      "source": "asr#25",
+      "vocab_word": "painful",
+      "vocab_card_id": "vocab_0000"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "难道可以容忍吗？",
+      "text_en": "Do you think I can bear it?",
+      "start_ms": 68160,
+      "end_ms": 69440,
+      "source": "asr#26"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "那你是为了什么？",
+      "text_en": "Then why did you do it?",
+      "start_ms": 70690,
+      "end_ms": 71890,
+      "source": "asr#27"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "姐姐三思，",
+      "text_en": "Sister, think,",
+      "start_ms": 75320,
+      "end_ms": 76120,
+      "source": "asr#28"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "为了安抚年羹尧，",
+      "text_en": "to appease Nian Gengyao,",
+      "start_ms": 79060,
+      "end_ms": 80220,
+      "source": "asr#29"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上迟早会复年世兰的分位，",
+      "text_en": "The Emperor will restore Nian Shilan rank.",
+      "start_ms": 81770,
+      "end_ms": 83850,
+      "source": "asr#30"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "最低便是华妃一位。",
+      "text_en": "At least to the rank of Hua Fei.",
+      "start_ms": 84930,
+      "end_ms": 86330,
+      "source": "asr#31"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "若情势所迫，",
+      "text_en": "If forced by the situation,",
+      "start_ms": 88020,
+      "end_ms": 88940,
+      "source": "asr#32"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "只怕封个贵妃也不是不可能的。",
+      "text_en": "she could even become a higher consort.",
+      "start_ms": 90520,
+      "end_ms": 92640,
+      "source": "asr#33"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "纵使姐姐今日得太后欢心，",
+      "text_en": "Even if you have the Empress Dowager's favor today,",
+      "start_ms": 94390,
+      "end_ms": 96150,
+      "source": "asr#34"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "来日还是无力阻挡。",
+      "text_en": "I still could not stop it.",
+      "start_ms": 96750,
+      "end_ms": 98190,
+      "source": "asr#35"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "与其这样，",
+      "text_en": "Rather than that,",
+      "start_ms": 99580,
+      "end_ms": 100220,
+      "source": "asr#36"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "宁可由我来说。",
+      "text_en": "better let me be the one to suggest it.",
+      "start_ms": 100860,
+      "end_ms": 101940,
+      "source": "asr#37"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "宁可皇上因为我而给她加封时有更多的无奈和愧疚。",
+      "text_en": "Better the Emperor feels more helpless and guilty when granting her because of me.",
+      "start_ms": 103440,
+      "end_ms": 106680,
+      "source": "asr#38"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "这样的情绪越多，",
+      "text_en": "The more he feels this,",
+      "start_ms": 108130,
+      "end_ms": 109210,
+      "source": "asr#39"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "我的地位就越稳。",
+      "text_en": "the more secure my position becomes.",
+      "start_ms": 109730,
+      "end_ms": 110930,
+      "source": "asr#40"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "纵使你说得这样清楚，",
+      "text_en": "Even though you explain so clearly,",
+      "start_ms": 112620,
+      "end_ms": 114260,
+      "source": "asr#41"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "可是我还是不明白。",
+      "text_en": "I still do not understand.",
+      "start_ms": 114980,
+      "end_ms": 116340,
+      "source": "asr#42"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "她今儿是华妃，",
+      "text_en": "She is Hua Fei today,",
+      "start_ms": 117220,
+      "end_ms": 118460,
+      "source": "asr#43"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "明儿成了贵妃，岂非更加简单？",
+      "text_en": "As Noble Consort, she would be unstoppable.",
+      "start_ms": 119020,
+      "end_ms": 121100,
+      "source": "asr#44"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "纵使你步步算计，",
+      "text_en": "Even if you scheme every step,",
+      "start_ms": 122060,
+      "end_ms": 123220,
+      "source": "asr#45"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "可是她未必步步走入你算计之中啊。",
+      "text_en": "she may not step into your trap every time.",
+      "start_ms": 124030,
+      "end_ms": 126270,
+      "source": "asr#46"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "是。",
+      "text_en": "Yes.",
+      "start_ms": 129269,
+      "end_ms": 129629,
+      "source": "asr#47"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "不知从什么时候开始，",
+      "text_en": "At some point, I do not know when,",
+      "start_ms": 132470,
+      "end_ms": 133790,
+      "source": "asr#48"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "我已变得工于算计，",
+      "text_en": "I have become [skillful] at scheming,",
+      "start_ms": 134790,
+      "end_ms": 136190,
+      "source": "asr#49",
+      "vocab_word": "skillful",
+      "vocab_card_id": "vocab_0001"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "自私凉薄。",
+      "text_en": "selfish and cold.",
+      "start_ms": 137150,
+      "end_ms": 138030,
+      "source": "asr#50"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "我知道。",
+      "text_en": "I know.",
+      "start_ms": 139500,
+      "end_ms": 140060,
+      "source": "asr#51"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "我已不是善良单纯的人了。",
+      "text_en": "I am no longer that kind and simple person.",
+      "start_ms": 142130,
+      "end_ms": 143850,
+      "source": "asr#52"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "可是我这么做，",
+      "text_en": "But what I did",
+      "start_ms": 145090,
+      "end_ms": 145930,
+      "source": "asr#53"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "的确是有不好马上说出口的道理。",
+      "text_en": "truly has reasons I cannot say right away.",
+      "start_ms": 148440,
+      "end_ms": 149920,
+      "source": "asr#54"
+    }
+  ],
+  "vocab_cards": [
+    {
+      "id": "vocab_0000",
+      "word": "painful",
+      "norm_word": "painful",
+      "dialogue_index": 24,
+      "source": "asr#25",
+      "speaker": "甄嬛",
+      "start_ms": 64720,
+      "end_ms": 67240,
+      "meaning_zh": "痛苦的",
+      "cet_meaning_zh": "使痛的；费力的",
+      "phonetic": "/ˈpeɪnfəl/",
+      "original_sentence": "My suffering is no less painful than yours.",
+      "simple_sentence": "The cut was very painful.",
+      "explanation_zh": "painful的意思是痛苦的。原句是 My suffering is no less painful than yours. 简单例句是 The cut was very painful."
+    },
+    {
+      "id": "vocab_0001",
+      "word": "skillful",
+      "norm_word": "skillful",
+      "dialogue_index": 48,
+      "source": "asr#49",
+      "speaker": "甄嬛",
+      "start_ms": 134790,
+      "end_ms": 136190,
+      "meaning_zh": "熟练的，灵巧的",
+      "cet_meaning_zh": "灵巧的，娴熟的",
+      "phonetic": "/ˈskɪlfəl/",
+      "original_sentence": "I have become skillful at scheming.",
+      "simple_sentence": "She is a skillful piano player.",
+      "explanation_zh": "skillful的意思是熟练的，灵巧的。原句是 I have become skillful at scheming. 简单例句是 She is a skillful piano player."
+    }
+  ]
+}

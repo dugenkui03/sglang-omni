@@ -1,0 +1,107 @@
+{
+  "validated_date": "2026-10-17",
+  "checks": [
+    {
+      "unit_id": "E35_lower",
+      "source_dialogue_count": 58,
+      "copied_audio_count": 58,
+      "all_source_rows_preserved": true,
+      "all_audio_hashes_match_source": true,
+      "all_wav_payloads_read": true,
+      "all_audio_formats_match": true,
+      "all_reference_durations_match_recorded_windows": true,
+      "empty_text_count": 0,
+      "missing_speaker_count": 0,
+      "tts_index_speaker_timestamp_mismatches": 0,
+      "expanded_reference_count": 3,
+      "expanded_reference_line_ids": [
+        "E35_lower_0010",
+        "E35_lower_0014",
+        "E35_lower_0030"
+      ]
+    },
+    {
+      "unit_id": "E36_upper",
+      "source_dialogue_count": 47,
+      "copied_audio_count": 47,
+      "all_source_rows_preserved": true,
+      "all_audio_hashes_match_source": true,
+      "all_wav_payloads_read": true,
+      "all_audio_formats_match": true,
+      "all_reference_durations_match_recorded_windows": true,
+      "empty_text_count": 0,
+      "missing_speaker_count": 0,
+      "tts_index_speaker_timestamp_mismatches": 0,
+      "expanded_reference_count": 4,
+      "expanded_reference_line_ids": [
+        "E36_upper_0012",
+        "E36_upper_0020",
+        "E36_upper_0038",
+        "E36_upper_0042"
+      ]
+    },
+    {
+      "unit_id": "E36_lower",
+      "source_dialogue_count": 60,
+      "copied_audio_count": 60,
+      "all_source_rows_preserved": true,
+      "all_audio_hashes_match_source": true,
+      "all_wav_payloads_read": true,
+      "all_audio_formats_match": true,
+      "all_reference_durations_match_recorded_windows": true,
+      "empty_text_count": 0,
+      "missing_speaker_count": 0,
+      "tts_index_speaker_timestamp_mismatches": 0,
+      "expanded_reference_count": 3,
+      "expanded_reference_line_ids": [
+        "E36_lower_0000",
+        "E36_lower_0041",
+        "E36_lower_0044"
+      ]
+    },
+    {
+      "unit_id": "E37_upper",
+      "source_dialogue_count": 54,
+      "copied_audio_count": 54,
+      "all_source_rows_preserved": true,
+      "all_audio_hashes_match_source": true,
+      "all_wav_payloads_read": true,
+      "all_audio_formats_match": true,
+      "all_reference_durations_match_recorded_windows": true,
+      "empty_text_count": 0,
+      "missing_speaker_count": 0,
+      "tts_index_speaker_timestamp_mismatches": 0,
+      "expanded_reference_count": 3,
+      "expanded_reference_line_ids": [
+        "E37_upper_0013",
+        "E37_upper_0016",
+        "E37_upper_0046"
+      ]
+    },
+    {
+      "unit_id": "E37_lower",
+      "source_dialogue_count": 53,
+      "copied_audio_count": 53,
+      "all_source_rows_preserved": true,
+      "all_audio_hashes_match_source": true,
+      "all_wav_payloads_read": true,
+      "all_audio_formats_match": true,
+      "all_reference_durations_match_recorded_windows": true,
+      "empty_text_count": 0,
+      "missing_speaker_count": 0,
+      "tts_index_speaker_timestamp_mismatches": 0,
+      "expanded_reference_count": 2,
+      "expanded_reference_line_ids": [
+        "E37_lower_0016",
+        "E37_lower_0021"
+      ]
+    }
+  ],
+  "test_scope": "File integrity, source-to-row correspondence, full WAV payload reads, PCM format, timestamps, non-empty text, speaker mapping, and existing reference-window provenance.",
+  "not_performed": [
+    "Manual listening to every line",
+    "Manual transcript correction",
+    "TTS inference or voice-cloning quality evaluation"
+  ],
+  "errors": []
+}

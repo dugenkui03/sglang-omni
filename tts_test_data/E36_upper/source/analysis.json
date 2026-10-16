@@ -1,0 +1,429 @@
+{
+  "episode": 36120,
+  "speakers": [
+    {
+      "speaker": "甄嬛",
+      "speaker_description": "young#female#皇帝的宠妃，正与皇上商议追封太妃并出谋划策"
+    },
+    {
+      "speaker": "皇上",
+      "speaker_description": "middle#male#清朝皇帝，听取甄嬛的建议并做出前朝后宫的职位安排"
+    }
+  ],
+  "dialogue": [
+    {
+      "speaker": "甄嬛",
+      "text_zh": "那就请皇上。",
+      "text_en": "Then I ask you, my lord.",
+      "start_ms": 40,
+      "end_ms": 840,
+      "source": "asr_1"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "追封温僖贵妃为贵太妃。",
+      "text_en": "Honor Consort Wenxi as Grand Consort.",
+      "start_ms": 2180,
+      "end_ms": 3980,
+      "source": "asr_2"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "加以封号，",
+      "text_en": "Give her a formal title,",
+      "start_ms": 5360,
+      "end_ms": 6160,
+      "source": "asr_3"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "迁葬入先帝妃陵。",
+      "text_en": "and move her to the late emperor's tomb.",
+      "start_ms": 6960,
+      "end_ms": 8560,
+      "source": "asr_4"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "同时",
+      "text_en": "At the same time,",
+      "start_ms": 9720,
+      "end_ms": 10240,
+      "source": "asr_5"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "加封宫中各位太妃，",
+      "text_en": "we should [honor] all the other consorts in the palace",
+      "start_ms": 11080,
+      "end_ms": 12560,
+      "source": "asr_6",
+      "vocab_word": "honor",
+      "vocab_card_id": "vocab_0000"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "加以尊号。",
+      "text_en": "Give them new titles.",
+      "start_ms": 13120,
+      "end_ms": 14000,
+      "source": "asr_7"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "尤其是寿祺太妃，",
+      "text_en": "Most of all, Consort Shouqi,",
+      "start_ms": 16650,
+      "end_ms": 17890,
+      "source": "asr_8"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "为诸太妃之首。",
+      "text_en": "she should be the first among them.",
+      "start_ms": 18250,
+      "end_ms": 19370,
+      "source": "asr_9"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "更要为太后",
+      "text_en": "And for the Empress Dowager,",
+      "start_ms": 21300,
+      "end_ms": 22220,
+      "source": "asr_10"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "崇以尊号，",
+      "text_en": "we must give her a high title,",
+      "start_ms": 22820,
+      "end_ms": 23540,
+      "source": "asr_11"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "以显皇上孝义之情。",
+      "text_en": "to show your deep respect and love for her.",
+      "start_ms": 24140,
+      "end_ms": 25700,
+      "source": "asr_12"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "不错，",
+      "text_en": "Yes,",
+      "start_ms": 26340,
+      "end_ms": 26820,
+      "source": "asr_13"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "他要追封他的生母，",
+      "text_en": "he wants to honor his birth mother,",
+      "start_ms": 27700,
+      "end_ms": 29180,
+      "source": "asr_14"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "朕就以",
+      "text_en": "so I will do it.",
+      "start_ms": 30020,
+      "end_ms": 30820,
+      "source": "asr_15"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "为太后祝祷，祈求安康之名，",
+      "text_en": "As a prayer for the Empress Dowager health,",
+      "start_ms": 31500,
+      "end_ms": 33980,
+      "source": "asr_16"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "为诸位太妃都加以尊号。",
+      "text_en": "Then I will give new titles to all the consorts.",
+      "start_ms": 34740,
+      "end_ms": 36860,
+      "source": "asr_17"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "如此，",
+      "text_en": "This way,",
+      "start_ms": 37540,
+      "end_ms": 38060,
+      "source": "asr_18"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "前朝后宫，",
+      "text_en": "the court and harem",
+      "start_ms": 38940,
+      "end_ms": 40140,
+      "source": "asr_19"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "皆无异议。",
+      "text_en": "will all approve.",
+      "start_ms": 40780,
+      "end_ms": 41500,
+      "source": "asr_20"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "这样",
+      "text_en": "Like this,",
+      "start_ms": 42460,
+      "end_ms": 42820,
+      "source": "asr_21"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "不仅言官不会有所议论，",
+      "text_en": "not only will the censors stay quiet,",
+      "start_ms": 43260,
+      "end_ms": 44900,
+      "source": "asr_22"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "宫中王爷太妃也会感沐皇上恩德。",
+      "text_en": "but the princes and consorts will also feel grateful for your kindness.",
+      "start_ms": 45900,
+      "end_ms": 48820,
+      "source": "asr_23"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "只是果郡王的生母",
+      "text_en": "But what about Prince Guo's birth mother,",
+      "start_ms": 50430,
+      "end_ms": 51870,
+      "source": "asr_24"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "舒太妃已然出家，",
+      "text_en": "Consort Shu is now a nun.",
+      "start_ms": 52590,
+      "end_ms": 53950,
+      "source": "asr_25"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上要如何安置呢？",
+      "text_en": "How will you [arrange] things for her?",
+      "start_ms": 54870,
+      "end_ms": 56310,
+      "source": "asr_26",
+      "vocab_word": "arrange",
+      "vocab_card_id": "vocab_0001"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "老十七不会在意这些。",
+      "text_en": "The Seventeenth Prince will not care about such things.",
+      "start_ms": 56590,
+      "end_ms": 58110,
+      "source": "asr_27"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "果郡王虽然不会在意，",
+      "text_en": "Even if he does not care,",
+      "start_ms": 59070,
+      "end_ms": 60390,
+      "source": "asr_28"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "只怕有些小人会因此揣度",
+      "text_en": "some mean people might still guess about it.",
+      "start_ms": 61310,
+      "end_ms": 63230,
+      "source": "asr_29"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上轻视果郡王。",
+      "text_en": "They might think you look down on him.",
+      "start_ms": 63670,
+      "end_ms": 64990,
+      "source": "asr_30"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "不如也请皇上",
+      "text_en": "Maybe we should also,",
+      "start_ms": 66410,
+      "end_ms": 67490,
+      "source": "asr_31"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "加恩于果郡王吧。",
+      "text_en": "show some extra kindness to Prince Guo.",
+      "start_ms": 68010,
+      "end_ms": 69330,
+      "source": "asr_32"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "这又有什么难办呢？",
+      "text_en": "That is not hard at all.",
+      "start_ms": 69890,
+      "end_ms": 71330,
+      "source": "asr_33"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "舒太妃已经出家了，",
+      "text_en": "Since Consort Shu is a nun now,",
+      "start_ms": 72130,
+      "end_ms": 73650,
+      "source": "asr_34"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "尊号是不宜再加了。",
+      "text_en": "giving her a formal title is not proper.",
+      "start_ms": 74490,
+      "end_ms": 76210,
+      "source": "asr_35"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "朕就",
+      "text_en": "I will",
+      "start_ms": 77100,
+      "end_ms": 77620,
+      "source": "asr_36"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "遥尊舒太妃为",
+      "text_en": "honor her from afar",
+      "start_ms": 78540,
+      "end_ms": 80020,
+      "source": "asr_37"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "冲静元师吧。",
+      "text_en": "as Master Chongjing.",
+      "start_ms": 80900,
+      "end_ms": 82340,
+      "source": "asr_38"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "嗯。",
+      "text_en": "Mm.",
+      "start_ms": 82540,
+      "end_ms": 82780,
+      "source": "asr_39"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "如此，",
+      "text_en": "Then,",
+      "start_ms": 83940,
+      "end_ms": 84500,
+      "source": "asr_40"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "那便再无不妥了。",
+      "text_en": "everything is settled now.",
+      "start_ms": 85460,
+      "end_ms": 86820,
+      "source": "asr_41"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "你不愧是朕的解语花。",
+      "text_en": "You truly are the one who understands me best.",
+      "start_ms": 88670,
+      "end_ms": 90550,
+      "source": "asr_42"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "能",
+      "text_en": "You can",
+      "start_ms": 92010,
+      "end_ms": 92370,
+      "source": "asr_43"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "事事为朕留心。",
+      "text_en": "always look out for everything I need.",
+      "start_ms": 92850,
+      "end_ms": 94250,
+      "source": "asr_44"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上为天下事操劳，",
+      "text_en": "You work so hard for the realm.",
+      "start_ms": 95540,
+      "end_ms": 96980,
+      "source": "asr_45"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "臣妾不懂朝政，",
+      "text_en": "I do not understand state affairs,",
+      "start_ms": 97460,
+      "end_ms": 98540,
+      "source": "asr_46"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "也只能在这些小事上为皇上留心了。",
+      "text_en": "I can only look out for you in these small things.",
+      "start_ms": 99140,
+      "end_ms": 101780,
+      "source": "asr_47"
+    }
+  ],
+  "vocab_cards": [
+    {
+      "id": "vocab_0000",
+      "word": "honor",
+      "norm_word": "honor",
+      "dialogue_index": 5,
+      "source": "asr_6",
+      "speaker": "甄嬛",
+      "start_ms": 11080,
+      "end_ms": 12560,
+      "meaning_zh": "给予荣誉，尊敬",
+      "cet_meaning_zh": "给予荣誉，尊敬",
+      "phonetic": "/ˈɑːnər/",
+      "original_sentence": "we should honor all the other consorts in the palace",
+      "simple_sentence": "We honor our teachers on Teacher's Day.",
+      "explanation_zh": "honor 在这里是动词，意思是给予荣誉、尊敬。原句是 'we should honor all the other consorts in the palace'，意思是我们应该给宫里各位太妃都加以尊号。简单例句是 'We honor our teachers on Teacher's Day'，意思是我们教师节向老师表达敬意。"
+    },
+    {
+      "id": "vocab_0001",
+      "word": "arrange",
+      "norm_word": "arrange",
+      "dialogue_index": 25,
+      "source": "asr_26",
+      "speaker": "甄嬛",
+      "start_ms": 54870,
+      "end_ms": 56310,
+      "meaning_zh": "安排，安置",
+      "cet_meaning_zh": "安排，整理",
+      "phonetic": "/əˈreɪndʒ/",
+      "original_sentence": "How will you arrange things for her?",
+      "simple_sentence": "Please arrange the books on the desk.",
+      "explanation_zh": "arrange 的意思是安排、整理。原句是 'How will you arrange things for her?'，意思是皇上要如何安置她呢？简单例句是 'Please arrange the books on the desk'，意思是请把桌上的书整理好。"
+    }
+  ]
+}

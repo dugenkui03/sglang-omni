@@ -1,0 +1,3 @@
+# These curated inputs must travel with the repository.
+!*.wav
+!*.txt

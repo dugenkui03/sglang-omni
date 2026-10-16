@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta
+            name="description"
+            content="使用真实台词测试 TTS 服务，观察请求时延、GPU 与运行日志。"
+        />
+        <title>TTS 测试工作台</title>
+        <link rel="stylesheet" href="/static/style.css" />
+        <script src="/static/charts.js" defer></script>
+        <script src="/static/controls.js" defer></script>
+        <script src="/static/views.js" defer></script>
+        <script src="/static/app.js" defer></script>
+    </head>
+    <body>
+        <aside class="sidebar">
+            <a class="brand" href="/" aria-label="TTS 工作台首页"
+                ><span class="brand-mark"
+                    ><i></i><i></i><i></i><i></i><i></i></span
+                ><span>VOICE LAB<small>TTS 测试工作台</small></span></a
+            >
+            <div class="nav-label">WORKSPACE</div>
+            <button class="nav-item active" data-tab="overview">
+                <span>◫</span>运行概览
+            </button>
+            <button class="nav-item" data-tab="requests">
+                <span>≡</span>请求记录
+            </button>
+            <button class="nav-item" data-tab="gpu">
+                <span>▦</span>GPU 监控
+            </button>
+            <button class="nav-item" data-tab="logs">
+                <span>⌘</span>服务日志
+            </button>
+            <div class="sidebar-note">
+                <span class="small-dot"></span> 工作台后台执行
+                <p>关闭页面后，测试仍会继续。<br />随时回来查看运行结果。</p>
+            </div>
+            <div class="sidebar-footer">
+                <span>独立应用</span><strong>HTTP · WAV</strong
+                ><small>projects / tts-workbench</small>
+            </div>
+        </aside>
+        <main>
+            <header class="page-header">
+                <div>
+                    <div class="eyebrow">OBSERVE · TEST · LISTEN</div>
+                    <h1>TTS 测试工作台</h1>
+                    <p>从一条台词到持续请求，了解语音服务的实际表现。</p>
+                </div>
+                <div class="header-actions">
+                    <span id="service-status" class="badge neutral"
+                        >正在连接服务</span
+                    ><button class="button quiet" id="refresh-service">
+                        ↻ 刷新连接
+                    </button>
+                </div>
+            </header>
+            <div class="connection-bar">
+                <span class="connection-label"
+                    >请求由工作台所在主机发出 · TTS</span
+                ><code id="api-base">读取中…</code><span class="divider"></span
+                ><span id="dataset-summary">正在读取测试素材</span
+                ><span class="connection-right"
+                    >每 2 秒更新 <i class="live-dot"></i
+                ></span>
+            </div>
+            <div id="notice" class="notice" role="status" hidden></div>
+            <div class="workspace-grid">
+                <section class="panel configuration">
+                    <div class="panel-heading">
+                        <div>
+                            <span class="section-index">01</span>
+                            <h2>配置测试</h2>
+                        </div>
+                        <span class="muted small">独立 HTTP 请求</span>
+                    </div>
+                    <form id="run-form">
+                        <label for="model">目标模型</label
+                        ><input
+                            id="model"
+                            list="model-options"
+                            required
+                            placeholder="从服务读取，或填写模型 ID"
+                            autocomplete="off"
+                        /><datalist id="model-options"></datalist>
+                        <label for="language">生成语言</label
+                        ><select id="language">
+                            <option value="Chinese">中文 · 原声克隆</option>
+                            <option value="English">英文 · 跨语言克隆</option>
+                        </select>
+                        <label>运行方式</label>
+                        <div
+                            class="segmented"
+                            role="group"
+                            aria-label="运行方式"
+                        >
+                            <button
+                                type="button"
+                                data-mode="duration"
+                                class="selected"
+                            >
+                                持续请求</button
+                            ><button type="button" data-mode="once">
+                                完整一轮</button
+                            ><button type="button" data-mode="single">
+                                单句试跑
+                            </button>
+                        </div>
+                        <div class="field-title">
+                            <label>测试素材</label
+                            ><button
+                                type="button"
+                                class="text-button"
+                                id="select-all"
+                            >
+                                全选
+                            </button>
+                        </div>
+                        <div id="unit-options" class="unit-options">
+                            <span class="muted">加载逐句素材…</span>
+                        </div>
+                        <select id="speaker" aria-label="筛选角色">
+                            <option value="">全部角色</option>
+                        </select>
+                        <div class="selection-meta">
+                            <span id="selected-count">— 条台词</span
+                            ><span
+                                id="review-count"
+                                class="warning-text"
+                            ></span>
+                        </div>
+                        <details class="reference-panel">
+                            <summary>查看台词与参考音频 <span>⌄</span></summary>
+                            <select
+                                id="line"
+                                aria-label="选择预览或试跑的台词"
+                            ></select>
+                            <div
+                                id="reference-text"
+                                class="reference-text"
+                            ></div>
+                            <audio
+                                id="reference-audio"
+                                controls
+                                preload="none"
+                            ></audio>
+                        </details>
+                        <div class="two-fields">
+                            <div>
+                                <label for="qpm"
+                                    >请求频率 <small>QPM</small></label
+                                ><input
+                                    id="qpm"
+                                    type="number"
+                                    value="10"
+                                    min="0.01"
+                                    max="60000"
+                                    step="any"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label for="concurrency">最大并发</label
+                                ><input
+                                    id="concurrency"
+                                    type="number"
+                                    value="2"
+                                    min="1"
+                                    max="256"
+                                    required
+                                />
+                            </div>
+                        </div>
+                        <div id="duration-fields">
+                            <label for="duration-preset">持续时长</label
+                            ><select id="duration-preset">
+                                <option value="600">10 分钟</option>
+                                <option value="3600">1 小时</option>
+                                <option value="86400">24 小时</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                            <div id="custom-duration" class="two-fields" hidden>
+                                <input
+                                    id="duration-value"
+                                    type="number"
+                                    value="1"
+                                    min="0.01"
+                                    step="any"
+                                    aria-label="自定义时长"
+                                /><select
+                                    id="duration-unit"
+                                    aria-label="时长单位"
+                                >
+                                    <option value="60">分钟</option>
+                                    <option value="3600">小时</option>
+                                    <option value="86400">天</option>
+                                </select>
+                            </div>
+                        </div>
+                        <details class="advanced">
+                            <summary>更多设置</summary>
+                            <label for="timeout"
+                                >单请求总超时 <small>秒</small></label
+                            ><input
+                                id="timeout"
+                                type="number"
+                                value="120"
+                                min="0.1"
+                                max="3600"
+                                step="any"
+                            /><label for="run-name"
+                                >任务名称 <small>可选</small></label
+                            ><input
+                                id="run-name"
+                                maxlength="100"
+                                placeholder="例如：1.7B 中文持续测试"
+                            />
+                        </details>
+                        <div class="estimate" id="estimate">
+                            每 6 秒发起一次请求
+                        </div>
+                        <button
+                            type="submit"
+                            id="start"
+                            class="button primary full"
+                        >
+                            ▶ 开始测试</button
+                        ><button
+                            type="button"
+                            id="stop"
+                            class="button danger-outline full"
+                            disabled
+                        >
+                            停止当前任务
+                        </button>
+                        <p class="form-note">
+                            并发已满时跳过当前发送时机，不积压补发。完整保留请求记录，每句抽样保存首次成功音频。
+                        </p>
+                    </form>
+                </section>
+                <div class="results-area">
+                    <section class="run-toolbar">
+                        <div>
+                            <span class="section-index">02</span
+                            ><select id="history" aria-label="选择历史测试">
+                                <option value="">尚无测试任务</option>
+                            </select>
+                        </div>
+                        <div class="toolbar-actions">
+                            <button class="text-button" id="clear-run" disabled>
+                                清理本次</button
+                            ><button class="text-button muted" id="clear-all">
+                                清理已结束任务
+                            </button>
+                        </div>
+                    </section>
+                    <section class="metric-grid" aria-label="请求统计">
+                        <div class="metric">
+                            <span>请求总数</span
+                            ><strong id="stat-sent">0</strong
+                            ><small id="stat-inflight">进行中 0</small>
+                        </div>
+                        <div class="metric">
+                            <span><i class="metric-dot green"></i>请求成功</span
+                            ><strong id="stat-success">0</strong
+                            ><small id="stat-rate">成功率 —</small>
+                        </div>
+                        <div class="metric">
+                            <span><i class="metric-dot red"></i>请求失败</span
+                            ><strong id="stat-failed">0</strong
+                            ><small id="stat-fail-detail"
+                                >超时 0 · 截断 0</small
+                            >
+                        </div>
+                        <div class="metric">
+                            <span>P95 请求时延</span
+                            ><strong id="stat-p95">—</strong
+                            ><small>成功请求 · 完整响应</small>
+                        </div>
+                    </section>
+                    <section class="panel task-progress">
+                        <div class="progress-header">
+                            <div>
+                                <span id="run-status" class="badge neutral"
+                                    >等待开始</span
+                                ><strong id="run-description"
+                                    >准备好素材，开始第一次测试</strong
+                                >
+                            </div>
+                            <span id="run-elapsed" class="muted small"
+                                >00:00 / —</span
+                            >
+                        </div>
+                        <div class="progress-track">
+                            <div id="progress-fill"></div>
+                        </div>
+                        <div class="progress-meta">
+                            <span id="coverage">素材覆盖 0 / 272</span
+                            ><span id="skipped">跳过调度 0</span
+                            ><span id="actual-qpm">发起 QPM —</span
+                            ><span id="success-qpm">成功 QPM —</span>
+                        </div>
+                    </section>
+                    <div
+                        class="content-tabs"
+                        role="tablist"
+                        aria-label="观察内容"
+                    >
+                        <button
+                            role="tab"
+                            data-tab="overview"
+                            aria-selected="true"
+                        >
+                            运行概览</button
+                        ><button
+                            role="tab"
+                            data-tab="requests"
+                            aria-selected="false"
+                        >
+                            请求记录</button
+                        ><button
+                            role="tab"
+                            data-tab="gpu"
+                            aria-selected="false"
+                        >
+                            GPU 监控</button
+                        ><button
+                            role="tab"
+                            data-tab="logs"
+                            aria-selected="false"
+                        >
+                            服务日志
+                        </button>
+                    </div>
+                    <section id="tab-overview" class="tab-content">
+                        <div class="chart-grid">
+                            <article class="panel chart-panel">
+                                <div class="chart-title">
+                                    <h3>请求时延</h3>
+                                    <span class="chart-legend"
+                                        ><i class="metric-dot blue"></i
+                                        >成功请求均值</span
+                                    >
+                                </div>
+                                <div id="latency-chart" class="chart"></div>
+                                <div class="chart-footer">
+                                    <span
+                                        >平均
+                                        <b id="latency-average">—</b></span
+                                    ><span>P50 <b id="latency-p50">—</b></span
+                                    ><span>P99 <b id="latency-p99">—</b></span>
+                                </div>
+                            </article>
+                            <article class="panel chart-panel">
+                                <div class="chart-title">
+                                    <h3>请求分布</h3>
+                                    <span class="chart-legend"
+                                        ><i class="metric-dot teal"></i
+                                        >每个时间段发送数</span
+                                    >
+                                </div>
+                                <div id="requests-chart" class="chart"></div>
+                                <div class="chart-footer">
+                                    <span
+                                        >目标 QPM <b id="target-qpm">—</b></span
+                                    ><span
+                                        >未确认结束原因
+                                        <b id="unknown-finish">0</b></span
+                                    >
+                                </div>
+                            </article>
+                        </div>
+                        <article class="panel event-panel">
+                            <div class="panel-heading">
+                                <h3>任务事件</h3>
+                                <span id="audio-storage" class="muted small"
+                                    >音频按句抽样保存</span
+                                >
+                            </div>
+                            <div id="events" class="events">
+                                <div class="empty-state">
+                                    <span class="empty-icon">≋</span
+                                    ><strong>这里将记录每次测试的进展</strong>
+                                    <p>
+                                        开始、停止、配额与异常都可以在这里回看。
+                                    </p>
+                                </div>
+                            </div>
+                        </article>
+                        <div class="info-note">
+                            <span>i</span>
+                            <p>
+                                素材按原样请求，不按音频时长或文本内容过滤。成功仅表示
+                                HTTP
+                                返回正常且服务未报告失败或截断，不代表音频质量已通过检查。失败保留记录与计数，但不纳入成功时延、成功
+                                QPM 和音频时长统计。
+                            </p>
+                        </div>
+                    </section>
+                    <section id="tab-requests" class="tab-content panel" hidden>
+                        <div class="panel-heading">
+                            <h3>逐句请求记录</h3>
+                            <label class="checkbox-label"
+                                ><input
+                                    type="checkbox"
+                                    id="failures-only"
+                                />只看失败</label
+                            >
+                        </div>
+                        <div class="table-scroll">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>序号 / 时间</th>
+                                        <th>台词 / 角色</th>
+                                        <th>结果</th>
+                                        <th>时延</th>
+                                        <th>音频</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="request-rows">
+                                    <tr>
+                                        <td colspan="5" class="table-empty">
+                                            测试开始后，逐句记录会出现在这里。
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination">
+                            <span id="page-info">0 条记录</span>
+                            <div>
+                                <button
+                                    class="button quiet"
+                                    id="previous-page"
+                                    disabled
+                                >
+                                    上一页</button
+                                ><button
+                                    class="button quiet"
+                                    id="next-page"
+                                    disabled
+                                >
+                                    下一页
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                    <section id="tab-gpu" class="tab-content" hidden>
+                        <div class="gpu-heading">
+                            <div>
+                                <h3>服务器 GPU</h3>
+                                <p>设备级利用率与显存 · 每 2 秒采样</p>
+                            </div>
+                            <span id="gpu-timestamp" class="muted small"
+                                >等待采样</span
+                            >
+                        </div>
+                        <div id="gpu-devices"></div>
+                        <article class="panel chart-panel gpu-chart-panel">
+                            <div class="chart-title">
+                                <h3>GPU 利用率趋势</h3>
+                                <span class="chart-legend"
+                                    >所选任务期间 · %</span
+                                >
+                            </div>
+                            <div id="gpu-chart" class="chart"></div>
+                        </article>
+                    </section>
+                    <section
+                        id="tab-logs"
+                        class="tab-content panel log-panel"
+                        hidden
+                    >
+                        <div class="panel-heading">
+                            <div>
+                                <h3>TTS 服务日志</h3>
+                                <span id="log-source" class="muted small"
+                                    >只读跟随日志文件</span
+                                >
+                            </div>
+                            <div class="toolbar-actions">
+                                <button class="text-button" id="pause-log">
+                                    暂停滚动</button
+                                ><button class="text-button" id="copy-log">
+                                    复制
+                                </button>
+                            </div>
+                        </div>
+                        <div class="log-tools">
+                            <span class="live-dot"></span
+                            ><span id="log-status">实时跟随</span
+                            ><input
+                                id="log-filter"
+                                placeholder="过滤当前日志窗口…"
+                                aria-label="过滤日志"
+                            />
+                        </div>
+                        <pre id="log-output" class="log-output" tabindex="0">
+正在读取服务日志…</pre
+                        >
+                        <div class="log-footnote">
+                            保留最近 1,500
+                            行显示；原始日志文件不受清理测试结果影响。
+                        </div>
+                    </section>
+                </div>
+            </div>
+            <footer class="page-footer">
+                <span>VOICE LAB / TTS Workbench</span
+                ><span>基于真实请求观察服务表现</span>
+            </footer>
+        </main>
+        <dialog id="request-dialog">
+            <div class="dialog-header">
+                <h2>请求详情</h2>
+                <button
+                    class="button quiet"
+                    id="close-dialog"
+                    aria-label="关闭详情"
+                >
+                    ✕
+                </button>
+            </div>
+            <div id="request-detail"></div>
+        </dialog>
+    </body>
+</html>

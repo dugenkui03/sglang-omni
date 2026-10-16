@@ -1,0 +1,477 @@
+{
+  "episode": 37120,
+  "speakers": [
+    {
+      "speaker": "安陵容",
+      "speaker_description": "young#female#后宫妃嫔，试图挑拨沈眉庄与甄嬛的关系"
+    },
+    {
+      "speaker": "沈眉庄",
+      "speaker_description": "young#female#后宫妃嫔，识破安陵容的意图并出言训斥"
+    }
+  ],
+  "dialogue": [
+    {
+      "speaker": "安陵容",
+      "text_zh": "我许久不见姐姐和莞姐姐在一起了，",
+      "text_en": "I have not seen you and Wan together in a long time.",
+      "start_ms": 80,
+      "end_ms": 2320,
+      "source": "asr_1"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "这是怎么了？",
+      "text_en": "What happened?",
+      "start_ms": 2720,
+      "end_ms": 3440,
+      "source": "asr_2"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "皇上常去她那儿，我不便过去。",
+      "text_en": "He is often with her, so I keep my distance.",
+      "start_ms": 5020,
+      "end_ms": 7340,
+      "source": "asr_3"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "又要忙着伺候太后，",
+      "text_en": "and serving the Empress Dowager,",
+      "start_ms": 7820,
+      "end_ms": 9420,
+      "source": "asr_4"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "是而碰不到了。",
+      "text_en": "So we do not see each other.",
+      "start_ms": 9900,
+      "end_ms": 10980,
+      "source": "asr_5"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "那就好，",
+      "text_en": "That is good.",
+      "start_ms": 11500,
+      "end_ms": 12100,
+      "source": "asr_6"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "原是我多心了。",
+      "text_en": "I was [probably] worrying too much.",
+      "start_ms": 12740,
+      "end_ms": 13860,
+      "source": "asr_7",
+      "vocab_word": "probably",
+      "vocab_card_id": "vocab_0000"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "见姐姐和莞姐姐总不在一块。",
+      "text_en": "I saw you and Wan were not together much.",
+      "start_ms": 14420,
+      "end_ms": 16220,
+      "source": "asr_8"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "还以为咱们姐妹生分了呢。",
+      "text_en": "I thought we had grown [apart].",
+      "start_ms": 16950,
+      "end_ms": 18590,
+      "source": "asr_9",
+      "vocab_word": "apart",
+      "vocab_card_id": "vocab_0001"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "你怎会这么认为？",
+      "text_en": "Why would you think that?",
+      "start_ms": 19390,
+      "end_ms": 20710,
+      "source": "asr_10"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "若是大家亲如姐妹，",
+      "text_en": "If we are all close like sisters,",
+      "start_ms": 21430,
+      "end_ms": 23110,
+      "source": "asr_11"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "彼此坦诚相对，",
+      "text_en": "and honest with each other,",
+      "start_ms": 23390,
+      "end_ms": 24710,
+      "source": "asr_12"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "又怎么会生分？",
+      "text_en": "how could we grow apart?",
+      "start_ms": 25270,
+      "end_ms": 26390,
+      "source": "asr_13"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "原是妹妹多心，才问了这么一句，",
+      "text_en": "I was just being oversensitive, so I asked.",
+      "start_ms": 28070,
+      "end_ms": 30510,
+      "source": "asr_14"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "姐姐别见怪。",
+      "text_en": "Please do not take offense.",
+      "start_ms": 31190,
+      "end_ms": 32150,
+      "source": "asr_15"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "你爱多心，我又不是第一日才知道，",
+      "text_en": "You always overthink. I have known that for a long time.",
+      "start_ms": 33270,
+      "end_ms": 36230,
+      "source": "asr_16"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "否则",
+      "text_en": "Otherwise,",
+      "start_ms": 36950,
+      "end_ms": 37390,
+      "source": "asr_17"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "也不会巴巴地跑来告诉我，",
+      "text_en": "you would not have rushed over to tell me",
+      "start_ms": 37750,
+      "end_ms": 39550,
+      "source": "asr_18"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "莞嫔劝皇上复位华妃的事。",
+      "text_en": "that Wan urged the Emperor to bring back Consort Hua.",
+      "start_ms": 39950,
+      "end_ms": 42190,
+      "source": "asr_19"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "关心则乱，",
+      "text_en": "Concern clouds judgment.",
+      "start_ms": 43450,
+      "end_ms": 44250,
+      "source": "asr_20"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "我也是担心两位姐姐。",
+      "text_en": "I was just worried about you both.",
+      "start_ms": 44770,
+      "end_ms": 46250,
+      "source": "asr_21"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "担心？",
+      "text_en": "Worried?",
+      "start_ms": 46890,
+      "end_ms": 47250,
+      "source": "asr_22"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "若真是担心，",
+      "text_en": "If you were truly worried,",
+      "start_ms": 48130,
+      "end_ms": 49170,
+      "source": "asr_23"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "便不会借宝鹃的嘴说与我听。",
+      "text_en": "you would not have used Baojuan to tell me.",
+      "start_ms": 49770,
+      "end_ms": 52130,
+      "source": "asr_24"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "莞嫔行事不正。",
+      "text_en": "Wan acted improperly.",
+      "start_ms": 52850,
+      "end_ms": 54090,
+      "source": "asr_25"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "你也未必坦坦荡荡。",
+      "text_en": "You are not innocent either.",
+      "start_ms": 54940,
+      "end_ms": 56420,
+      "source": "asr_26"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "姐姐说这话，便是错怪妹妹了。",
+      "text_en": "You are blaming me unfairly.",
+      "start_ms": 57700,
+      "end_ms": 59940,
+      "source": "asr_27"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "我与姐姐同仇敌忾，",
+      "text_en": "We share the same enemy,",
+      "start_ms": 60460,
+      "end_ms": 61980,
+      "source": "asr_28"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "厌憎华妃，",
+      "text_en": "we detest Hua,",
+      "start_ms": 62460,
+      "end_ms": 63220,
+      "source": "asr_29"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "才会担心莞姐姐一时糊涂。",
+      "text_en": "that is why I worried Wan was making a mistake.",
+      "start_ms": 63820,
+      "end_ms": 66020,
+      "source": "asr_30"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "你若担心她糊涂，",
+      "text_en": "If you were worried she was being foolish,",
+      "start_ms": 66550,
+      "end_ms": 67710,
+      "source": "asr_31"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "说与她自己知道就是。",
+      "text_en": "you should tell her yourself.",
+      "start_ms": 68230,
+      "end_ms": 69870,
+      "source": "asr_32"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "姐姐别生气，",
+      "text_en": "Please do not be angry.",
+      "start_ms": 72480,
+      "end_ms": 73320,
+      "source": "asr_33"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "都是陵容胆小又多话，",
+      "text_en": "It is just me being timid and talkative,",
+      "start_ms": 74000,
+      "end_ms": 75680,
+      "source": "asr_34"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "才惹姐姐生气。",
+      "text_en": "that upset you.",
+      "start_ms": 76120,
+      "end_ms": 77200,
+      "source": "asr_35"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "不必了，",
+      "text_en": "That is enough.",
+      "start_ms": 77920,
+      "end_ms": 78560,
+      "source": "asr_36"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "你有这个工夫和我解释，",
+      "text_en": "You have time to explain to me,",
+      "start_ms": 79080,
+      "end_ms": 80960,
+      "source": "asr_37"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "还不如留着力气去讨好皇上。",
+      "text_en": "you might as well use that energy to please the Emperor",
+      "start_ms": 81440,
+      "end_ms": 83480,
+      "source": "asr_38"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "力劝皇上惩治华妃。",
+      "text_en": "and urge him to punish Hua.",
+      "start_ms": 84090,
+      "end_ms": 85930,
+      "source": "asr_39"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "都是妹妹无能。",
+      "text_en": "I am just useless.",
+      "start_ms": 87440,
+      "end_ms": 88320,
+      "source": "asr_40"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "无能是小，",
+      "text_en": "Being useless is not a big deal,",
+      "start_ms": 88760,
+      "end_ms": 89680,
+      "source": "asr_41"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "若是心术不正，",
+      "text_en": "but having bad intentions,",
+      "start_ms": 90160,
+      "end_ms": 91360,
+      "source": "asr_42"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "挑拨是非，坏了德性，那才是大事。",
+      "text_en": "stirring up trouble and losing your virtue, that is serious.",
+      "start_ms": 91640,
+      "end_ms": 94400,
+      "source": "asr_43"
+    },
+    {
+      "speaker": "安陵容",
+      "text_zh": "姐姐教诲的是。",
+      "text_en": "You are right to teach me.",
+      "start_ms": 95560,
+      "end_ms": 96520,
+      "source": "asr_44"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "不是我要教诲你。",
+      "text_en": "I am not trying to teach you.",
+      "start_ms": 97120,
+      "end_ms": 98400,
+      "source": "asr_45"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "大家相识一场，",
+      "text_en": "We have known each other,",
+      "start_ms": 99300,
+      "end_ms": 100500,
+      "source": "asr_46"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "有什么话当面说也就罢了，",
+      "text_en": "if you have something to say, just say it to her face.",
+      "start_ms": 100940,
+      "end_ms": 103180,
+      "source": "asr_47"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "又何必欲擒故纵，",
+      "text_en": "Why play hard to get,",
+      "start_ms": 103860,
+      "end_ms": 105420,
+      "source": "asr_48"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "步步为营，",
+      "text_en": "and scheme?",
+      "start_ms": 105780,
+      "end_ms": 106460,
+      "source": "asr_49"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "也太辛苦了些。",
+      "text_en": "it must be tiring.",
+      "start_ms": 106860,
+      "end_ms": 108020,
+      "source": "asr_50"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "以后你若再有这样的话，",
+      "text_en": "In the future, if you have such words again,",
+      "start_ms": 109220,
+      "end_ms": 111140,
+      "source": "asr_51"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "自己说给她知道便是了，",
+      "text_en": "tell her yourself,",
+      "start_ms": 111700,
+      "end_ms": 113460,
+      "source": "asr_52"
+    },
+    {
+      "speaker": "沈眉庄",
+      "text_zh": "不必再来说给我听。",
+      "text_en": "do not come and tell me.",
+      "start_ms": 114180,
+      "end_ms": 115780,
+      "source": "asr_53"
+    }
+  ],
+  "vocab_cards": [
+    {
+      "id": "vocab_0000",
+      "word": "probably",
+      "norm_word": "probably",
+      "dialogue_index": 6,
+      "source": "asr_7",
+      "speaker": "安陵容",
+      "start_ms": 12740,
+      "end_ms": 13860,
+      "meaning_zh": "大概，或许",
+      "cet_meaning_zh": "或许，大概",
+      "phonetic": "/ˈprɑːbəbli/",
+      "original_sentence": "I was probably worrying too much.",
+      "simple_sentence": "She is probably at home.",
+      "explanation_zh": "probably 的意思是大概或许。原句是 I was probably worrying too much。简单例句是 She is probably at home。"
+    },
+    {
+      "id": "vocab_0001",
+      "word": "apart",
+      "norm_word": "apart",
+      "dialogue_index": 8,
+      "source": "asr_9",
+      "speaker": "安陵容",
+      "start_ms": 16950,
+      "end_ms": 18590,
+      "meaning_zh": "分开",
+      "cet_meaning_zh": "相隔；分开；除去",
+      "phonetic": "/əˈpɑːrt/",
+      "original_sentence": "I thought we had grown apart.",
+      "simple_sentence": "They sat far apart.",
+      "explanation_zh": "apart 的意思是分开。原句是 I thought we had grown apart。简单例句是 They sat far apart。"
+    }
+  ]
+}

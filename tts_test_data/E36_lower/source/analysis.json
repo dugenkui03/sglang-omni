@@ -1,0 +1,527 @@
+{
+  "episode": 36120,
+  "speakers": [
+    {
+      "speaker": "太后",
+      "speaker_description": "old#female#在寿康宫审问、敲打莞嫔是否干预朝政"
+    },
+    {
+      "speaker": "莞嫔",
+      "speaker_description": "young#female#被太后审问，表明自己没有干政的私心"
+    },
+    {
+      "speaker": "惠贵人",
+      "speaker_description": "young#female#在太后身旁捧盘侍奉，因见太后责怪莞嫔而试图开口解围"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "speaker_description": "young#female#在宫内刺绣，与宫女分析惠贵人为何生气离开寿康宫"
+    },
+    {
+      "speaker": "宫女",
+      "speaker_description": "young#female#向小主禀报惠贵人和莞嫔离开寿康宫时的情形"
+    }
+  ],
+  "dialogue": [
+    {
+      "speaker": "太后",
+      "text_zh": "莞嫔，",
+      "text_en": "Lady Huan,",
+      "start_ms": 80,
+      "end_ms": 280,
+      "source": "asr_1"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "你可知罪？",
+      "text_en": "Do you know your crime?",
+      "start_ms": 1160,
+      "end_ms": 2160,
+      "source": "asr_2"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "臣妾惶恐不知，",
+      "text_en": "I am scared, I do not know.",
+      "start_ms": 5910,
+      "end_ms": 6910,
+      "source": "asr_3"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "还请太后明示。",
+      "text_en": "Please enlighten me.",
+      "start_ms": 7310,
+      "end_ms": 8390,
+      "source": "asr_4"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "你好大的胆子，",
+      "text_en": "How dare you!",
+      "start_ms": 8500,
+      "end_ms": 10500,
+      "source": "gemini"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "竟敢以妃嫔之身干预朝政。",
+      "text_en": "You dare to meddle in state affairs!",
+      "start_ms": 10800,
+      "end_ms": 13500,
+      "source": "gemini"
+    },
+    {
+      "speaker": "惠贵人",
+      "text_zh": "太后，她……",
+      "text_en": "Your Majesty, she...",
+      "start_ms": 14200,
+      "end_ms": 15200,
+      "source": "gemini"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "哀家问她呢，",
+      "text_en": "I am asking her.",
+      "start_ms": 16000,
+      "end_ms": 17200,
+      "source": "gemini"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "你慌张什么？",
+      "text_en": "Why are you so nervous?",
+      "start_ms": 17310,
+      "end_ms": 18190,
+      "source": "asr_5"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "臣妾不知太后为何要这样说。",
+      "text_en": "I do not know why you say this, Your Majesty.",
+      "start_ms": 19940,
+      "end_ms": 21740,
+      "source": "asr_6"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "可是臣妾",
+      "text_en": "But I",
+      "start_ms": 23490,
+      "end_ms": 24130,
+      "source": "asr_7"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "实在不敢犯这样的死罪。",
+      "text_en": "truly dare not commit such a crime.",
+      "start_ms": 25050,
+      "end_ms": 26610,
+      "source": "asr_8"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "哀家准你自己说。",
+      "text_en": "I allow you to explain yourself.",
+      "start_ms": 28150,
+      "end_ms": 29430,
+      "source": "asr_9"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "追封太妃一事，",
+      "text_en": "About the posthumous title for the late consort,",
+      "start_ms": 30820,
+      "end_ms": 32140,
+      "source": "asr_10"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "你有多少参与其中？",
+      "text_en": "how much were you involved?",
+      "start_ms": 32860,
+      "end_ms": 34380,
+      "source": "asr_11"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "太后明鉴，",
+      "text_en": "Empress Dowager,",
+      "start_ms": 34820,
+      "end_ms": 35500,
+      "source": "asr_12"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "臣妾再年轻不懂事，",
+      "text_en": "Even though I am young and foolish,",
+      "start_ms": 36500,
+      "end_ms": 37780,
+      "source": "asr_13"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "也知道后宫不得干政。",
+      "text_en": "I know I must not meddle in politics.",
+      "start_ms": 38100,
+      "end_ms": 39420,
+      "source": "asr_14"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "皇上是圣明之君，",
+      "text_en": "His Majesty is a wise ruler,",
+      "start_ms": 40670,
+      "end_ms": 41750,
+      "source": "asr_15"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "追封太妃之事，心中早有决断，",
+      "text_en": "He had already settled the matter of the late consort's title,",
+      "start_ms": 42470,
+      "end_ms": 44510,
+      "source": "asr_16"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "岂是臣妾可以左右？",
+      "text_en": "how could I possibly influence him?",
+      "start_ms": 45030,
+      "end_ms": 46230,
+      "source": "asr_17"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "臣妾愚昧。",
+      "text_en": "I was foolish.",
+      "start_ms": 47310,
+      "end_ms": 48030,
+      "source": "asr_18"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "以为追封太妃是后宫之事，",
+      "text_en": "I thought it was an inner court matter,",
+      "start_ms": 49440,
+      "end_ms": 51200,
+      "source": "asr_19"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "才敢略说一二句话。",
+      "text_en": "so I dared to say a few words.",
+      "start_ms": 51800,
+      "end_ms": 53200,
+      "source": "asr_20"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "若说朝政，",
+      "text_en": "As for state affairs,",
+      "start_ms": 53800,
+      "end_ms": 54600,
+      "source": "asr_21"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "是绝不敢有丝毫沾染的。",
+      "text_en": "I would never dare to touch them at all.",
+      "start_ms": 55930,
+      "end_ms": 57610,
+      "source": "asr_22"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "纵使你无意于朝政大事，",
+      "text_en": "Even if you had no intention in state affairs,",
+      "start_ms": 58330,
+      "end_ms": 60370,
+      "source": "asr_23"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "你敢说",
+      "text_en": "do you dare to say",
+      "start_ms": 61450,
+      "end_ms": 62290,
+      "source": "asr_24"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "这件事中你没有半点私心？",
+      "text_en": "that you had no personal motive in this?",
+      "start_ms": 63170,
+      "end_ms": 65250,
+      "source": "asr_25"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "臣妾不敢欺瞒太后。",
+      "text_en": "I dare not deceive Your Majesty.",
+      "start_ms": 66160,
+      "end_ms": 67440,
+      "source": "asr_26"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "皇上是一国之君，",
+      "text_en": "His Majesty rules the nation,",
+      "start_ms": 69080,
+      "end_ms": 70240,
+      "source": "asr_27"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "总忧心于朝政，废寝忘食。",
+      "text_en": "and neglects himself for state affairs.",
+      "start_ms": 70880,
+      "end_ms": 72880,
+      "source": "asr_28"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "臣妾得幸于皇上，",
+      "text_en": "I am fortunate to be favored by His Majesty,",
+      "start_ms": 73920,
+      "end_ms": 75280,
+      "source": "asr_29"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "能够侍奉左右。",
+      "text_en": "and able to serve by his side.",
+      "start_ms": 75880,
+      "end_ms": 77080,
+      "source": "asr_30"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "若有私心，",
+      "text_en": "If I have any personal wish,",
+      "start_ms": 78380,
+      "end_ms": 79300,
+      "source": "asr_31"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "也是希望皇上",
+      "text_en": "it is only that I hope His Majesty",
+      "start_ms": 79980,
+      "end_ms": 81060,
+      "source": "asr_32"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "能够万岁平安。",
+      "text_en": "may live long in peace.",
+      "start_ms": 81660,
+      "end_ms": 82780,
+      "source": "asr_33"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "臣妾也能得以眷顾，",
+      "text_en": "and that I may also be cared for,",
+      "start_ms": 84060,
+      "end_ms": 85180,
+      "source": "asr_34"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "平安终老。",
+      "text_en": "and live in peace.",
+      "start_ms": 85860,
+      "end_ms": 86660,
+      "source": "asr_35"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "这点私心，",
+      "text_en": "This little selfish thought,",
+      "start_ms": 88160,
+      "end_ms": 89040,
+      "source": "asr_36"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "后宫哪个嫔妃没有？",
+      "text_en": "which consort in the palace does not have?",
+      "start_ms": 89840,
+      "end_ms": 91440,
+      "source": "asr_37"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "也罢，",
+      "text_en": "Forget it,",
+      "start_ms": 93700,
+      "end_ms": 94140,
+      "source": "asr_38"
+    },
+    {
+      "speaker": "太后",
+      "text_zh": "起来吧。",
+      "text_en": "Get up.",
+      "start_ms": 94980,
+      "end_ms": 95660,
+      "source": "asr_39"
+    },
+    {
+      "speaker": "莞嫔",
+      "text_zh": "谢太后。",
+      "text_en": "Thank you, Your Majesty.",
+      "start_ms": 96740,
+      "end_ms": 97500,
+      "source": "asr_40"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "说。",
+      "text_en": "Speak.",
+      "start_ms": 100490,
+      "end_ms": 100970,
+      "source": "asr_41"
+    },
+    {
+      "speaker": "宫女",
+      "text_zh": "今日午后，",
+      "text_en": "This afternoon,",
+      "start_ms": 102340,
+      "end_ms": 103100,
+      "source": "asr_42"
+    },
+    {
+      "speaker": "宫女",
+      "text_zh": "奴婢见惠贵人气冲冲从寿康宫出来，",
+      "text_en": "I saw Lady Hui come out of Shoukang Palace in anger,",
+      "start_ms": 103660,
+      "end_ms": 106300,
+      "source": "asr_43"
+    },
+    {
+      "speaker": "宫女",
+      "text_zh": "过不多久，莞嫔也出来了。",
+      "text_en": "Not long after, Lady Huan also came out.",
+      "start_ms": 106980,
+      "end_ms": 108740,
+      "source": "asr_44"
+    },
+    {
+      "speaker": "宫女",
+      "text_zh": "不知道是不是惠贵人得罪了太后呢？",
+      "text_en": "Could it be that Lady Hui offended Her Majesty?",
+      "start_ms": 109460,
+      "end_ms": 111740,
+      "source": "asr_45"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "得罪太后，惠贵人怎么会生气？",
+      "text_en": "If she offended Her Majesty, why would Lady Hui be angry?",
+      "start_ms": 112410,
+      "end_ms": 114450,
+      "source": "asr_46"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "让惠贵人如此生气的，",
+      "text_en": "What made Lady Hui so angry,",
+      "start_ms": 115970,
+      "end_ms": 117650,
+      "source": "asr_47"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "无非是她知道",
+      "text_en": "is simply that she knows",
+      "start_ms": 118210,
+      "end_ms": 119250,
+      "source": "asr_48"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "是莞嫔让皇上复位华妃的事。",
+      "text_en": "Consort Wan had Consort Hua restored.",
+      "start_ms": 119690,
+      "end_ms": 121970,
+      "source": "asr_49"
+    },
+    {
+      "speaker": "宫女",
+      "text_zh": "上次小主跟惠贵人这样说，",
+      "text_en": "Last time you told Lady Hui this,",
+      "start_ms": 123010,
+      "end_ms": 125010,
+      "source": "asr_50"
+    },
+    {
+      "speaker": "宫女",
+      "text_zh": "她还偏不信。",
+      "text_en": "she still did not believe it.",
+      "start_ms": 125330,
+      "end_ms": 126170,
+      "source": "asr_51"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "我说的她未必全然不信。",
+      "text_en": "It is not that she did not believe me at all.",
+      "start_ms": 126820,
+      "end_ms": 128620,
+      "source": "asr_52"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "凡事",
+      "text_en": "In everything,",
+      "start_ms": 129540,
+      "end_ms": 130060,
+      "source": "asr_53"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "只有在起了疑心之后，",
+      "text_en": "only after you get suspicious,",
+      "start_ms": 130380,
+      "end_ms": 131940,
+      "source": "asr_54"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "事情又被证实，",
+      "text_en": "and it is [confirmed],",
+      "start_ms": 132900,
+      "end_ms": 134020,
+      "source": "asr_55",
+      "vocab_word": "confirmed",
+      "vocab_card_id": "vocab_0000"
+    },
+    {
+      "speaker": "紫衣妃嫔",
+      "text_zh": "才会如此生气。",
+      "text_en": "you get so angry.",
+      "start_ms": 134660,
+      "end_ms": 135780,
+      "source": "asr_56"
+    }
+  ],
+  "vocab_cards": [
+    {
+      "id": "vocab_0000",
+      "word": "confirmed",
+      "norm_word": "confirmed",
+      "dialogue_index": 58,
+      "source": "asr_55",
+      "speaker": "紫衣妃嫔",
+      "start_ms": 132900,
+      "end_ms": 134020,
+      "meaning_zh": "证实，确定",
+      "cet_meaning_zh": "证实，肯定；批准",
+      "phonetic": "/kən'fɜːrm/",
+      "original_sentence": "and it is confirmed,",
+      "simple_sentence": "The news confirmed my guess.",
+      "explanation_zh": "confirm 的意思是证实、确定。原句是 and it is confirmed，意思是事情被证实了。简单例句是 The news confirmed my guess，意思是这个消息证实了我的猜想。"
+    }
+  ]
+}

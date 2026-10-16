@@ -1,0 +1,517 @@
+{
+  "episode": 35120,
+  "speakers": [
+    {
+      "speaker": "甄嬛",
+      "speaker_description": "young#female#皇帝的妃嫔，为皇上排忧解难并推荐福晋去劝说敦亲王"
+    },
+    {
+      "speaker": "皇上",
+      "speaker_description": "middle#male#清朝皇帝，因敦亲王之事烦心且感叹群臣无用，正与甄嬛商议对策"
+    }
+  ],
+  "dialogue": [
+    {
+      "speaker": "甄嬛",
+      "text_zh": "其实皇上",
+      "text_en": "Your Majesty,",
+      "start_ms": 80,
+      "end_ms": 760,
+      "source": "asr#1"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "大可不必用处罚敦亲王",
+      "text_en": "you really do not need to punish Prince Dun",
+      "start_ms": 1200,
+      "end_ms": 3040,
+      "source": "asr#2"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "来平息此事。",
+      "text_en": "to settle this.",
+      "start_ms": 3240,
+      "end_ms": 4240,
+      "source": "asr#3"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "文臣群情激昂，",
+      "text_en": "The civil officials are all upset,",
+      "start_ms": 5820,
+      "end_ms": 6980,
+      "source": "asr#4"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "不过是想要一个说法。",
+      "text_en": "They just want a [response].",
+      "start_ms": 7660,
+      "end_ms": 8980,
+      "source": "asr#5",
+      "vocab_word": "response",
+      "vocab_card_id": "vocab_0000"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上给他们一个说法就是了。",
+      "text_en": "Just give them one.",
+      "start_ms": 9980,
+      "end_ms": 11820,
+      "source": "asr#6"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "最好的",
+      "text_en": "The best way",
+      "start_ms": 13530,
+      "end_ms": 14210,
+      "source": "asr#7"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "便是让敦亲王",
+      "text_en": "is to have Prince Dun",
+      "start_ms": 14810,
+      "end_ms": 16010,
+      "source": "asr#8"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "登门致歉。",
+      "text_en": "apologize in person.",
+      "start_ms": 16690,
+      "end_ms": 17490,
+      "source": "asr#9"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "让敦亲王登门致歉？",
+      "text_en": "Have Prince Dun apologize in person?",
+      "start_ms": 18450,
+      "end_ms": 20450,
+      "source": "asr#10"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "嗯。",
+      "text_en": "Yes.",
+      "start_ms": 20890,
+      "end_ms": 21130,
+      "source": "asr#11"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "他那么心高气傲的，",
+      "text_en": "He is so proud,",
+      "start_ms": 21930,
+      "end_ms": 23330,
+      "source": "asr#12"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "简直还不如杀了他。",
+      "text_en": "He would rather die.",
+      "start_ms": 23850,
+      "end_ms": 24970,
+      "source": "asr#13"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "那也未必了，",
+      "text_en": "Not necessarily.",
+      "start_ms": 25650,
+      "end_ms": 26650,
+      "source": "asr#14"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "王爷",
+      "text_en": "The prince",
+      "start_ms": 27330,
+      "end_ms": 27810,
+      "source": "asr#15"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "征战沙场，为国杀敌，",
+      "text_en": "has fought many battles, for the country,",
+      "start_ms": 28170,
+      "end_ms": 29810,
+      "source": "asr#16"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "也算是个英雄。",
+      "text_en": "He is a hero.",
+      "start_ms": 30250,
+      "end_ms": 31250,
+      "source": "asr#17"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "那英雄，",
+      "text_en": "And a hero,",
+      "start_ms": 32410,
+      "end_ms": 33090,
+      "source": "asr#18"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "最难过哪关？",
+      "text_en": "what is his weakness?",
+      "start_ms": 34060,
+      "end_ms": 34900,
+      "source": "asr#19"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "英雄难过美人关。",
+      "text_en": "A hero cannot resist a beauty.",
+      "start_ms": 35780,
+      "end_ms": 37540,
+      "source": "asr#20"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "你这个机灵鬼啊，",
+      "text_en": "You clever girl,",
+      "start_ms": 38340,
+      "end_ms": 39620,
+      "source": "asr#21"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "亏你能想得出这个招来。",
+      "text_en": "only you could [create] this trick.",
+      "start_ms": 40020,
+      "end_ms": 41620,
+      "source": "asr#22",
+      "vocab_word": "create",
+      "vocab_card_id": "vocab_0001"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上也知道英雄难过美人关啊。",
+      "text_en": "So you know a hero falls for beauty.",
+      "start_ms": 41940,
+      "end_ms": 43940,
+      "source": "asr#23"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "臣妾哪里懂得什么国家大事，",
+      "text_en": "I do not understand state affairs,",
+      "start_ms": 45420,
+      "end_ms": 47300,
+      "source": "asr#24"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "知道的，",
+      "text_en": "What I know",
+      "start_ms": 47940,
+      "end_ms": 48500,
+      "source": "asr#25"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "不过是些妯娌间鸡毛蒜皮的事。",
+      "text_en": "is just trivial family matters.",
+      "start_ms": 48980,
+      "end_ms": 51180,
+      "source": "asr#26"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "王爷敬畏福晋，",
+      "text_en": "The prince respects his wife,",
+      "start_ms": 53300,
+      "end_ms": 54300,
+      "source": "asr#27"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "此事若由福晋出马，",
+      "text_en": "If the princess handles this,",
+      "start_ms": 55100,
+      "end_ms": 56700,
+      "source": "asr#28"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "自然是无往而不利的。",
+      "text_en": "it will definitely work.",
+      "start_ms": 57220,
+      "end_ms": 58620,
+      "source": "asr#29"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "臣妾曾与福晋有过数面之缘，",
+      "text_en": "I have met the princess a few times,",
+      "start_ms": 60200,
+      "end_ms": 61960,
+      "source": "asr#30"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "知道她",
+      "text_en": "and I know she",
+      "start_ms": 62520,
+      "end_ms": 62960,
+      "source": "asr#31"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "并不是一个悍妒无知的妇人。",
+      "text_en": "is not a jealous and ignorant woman.",
+      "start_ms": 63280,
+      "end_ms": 64880,
+      "source": "asr#32"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "那你说，",
+      "text_en": "Then tell me,",
+      "start_ms": 66090,
+      "end_ms": 66690,
+      "source": "asr#33"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "谁去劝敦亲王福晋呢？",
+      "text_en": "who should go talk to the princess?",
+      "start_ms": 67690,
+      "end_ms": 69650,
+      "source": "asr#34"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上若不嫌弃臣妾无能，",
+      "text_en": "If you do not mind my lack of ability,",
+      "start_ms": 70530,
+      "end_ms": 72650,
+      "source": "asr#35"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "那臣妾",
+      "text_en": "then I",
+      "start_ms": 73090,
+      "end_ms": 73770,
+      "source": "asr#36"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "就自告奋勇了。",
+      "text_en": "will volunteer.",
+      "start_ms": 74330,
+      "end_ms": 75530,
+      "source": "asr#37"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "后宫之中，",
+      "text_en": "In the palace,",
+      "start_ms": 77590,
+      "end_ms": 78390,
+      "source": "asr#38"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "只有你",
+      "text_en": "only you",
+      "start_ms": 79150,
+      "end_ms": 79830,
+      "source": "asr#39"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "能为朕",
+      "text_en": "can help me",
+      "start_ms": 80270,
+      "end_ms": 80910,
+      "source": "asr#40"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "排忧解难。",
+      "text_en": "solve problems.",
+      "start_ms": 81270,
+      "end_ms": 82150,
+      "source": "asr#41"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "朕的那些大臣们，",
+      "text_en": "My ministers,",
+      "start_ms": 83750,
+      "end_ms": 85030,
+      "source": "asr#42"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "拿着朕的俸禄，",
+      "text_en": "they take my salary,",
+      "start_ms": 85550,
+      "end_ms": 86590,
+      "source": "asr#43"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "哄闹了半天，",
+      "text_en": "made a lot of noise,",
+      "start_ms": 87750,
+      "end_ms": 88750,
+      "source": "asr#44"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "却只能出些罚与不罚的主意，",
+      "text_en": "but only had ideas about punishment.",
+      "start_ms": 89670,
+      "end_ms": 92230,
+      "source": "asr#45"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "当真是无用之极。",
+      "text_en": "Utterly useless.",
+      "start_ms": 92310,
+      "end_ms": 93990,
+      "source": "asr#46"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "臣妾只是后宫中一介区区妇人，",
+      "text_en": "I am just a mere woman in the palace,",
+      "start_ms": 95090,
+      "end_ms": 97330,
+      "source": "asr#47"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "哪里是臣妾的主意？",
+      "text_en": "How could it be my idea?",
+      "start_ms": 98330,
+      "end_ms": 99730,
+      "source": "asr#48"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "不过是皇上的心意，",
+      "text_en": "It is just Your Majesty's intention,",
+      "start_ms": 101130,
+      "end_ms": 102330,
+      "source": "asr#49"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "侥幸被臣妾猜中了而已。",
+      "text_en": "that I happened to guess.",
+      "start_ms": 103010,
+      "end_ms": 104650,
+      "source": "asr#50"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "那些大臣们熟悉的是书本伦理，",
+      "text_en": "Those ministers know books and ethics,",
+      "start_ms": 105770,
+      "end_ms": 108290,
+      "source": "asr#51"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "可臣妾",
+      "text_en": "but I",
+      "start_ms": 108690,
+      "end_ms": 109370,
+      "source": "asr#52"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "熟悉的却是皇上。",
+      "text_en": "know you.",
+      "start_ms": 110090,
+      "end_ms": 111210,
+      "source": "asr#53"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "皇上的天意，",
+      "text_en": "Your thoughts,",
+      "start_ms": 112780,
+      "end_ms": 113500,
+      "source": "asr#54"
+    },
+    {
+      "speaker": "甄嬛",
+      "text_zh": "臣妾还是能揣测几分的。",
+      "text_en": "I can still guess a bit.",
+      "start_ms": 114100,
+      "end_ms": 115700,
+      "source": "asr#55"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "嬛嬛，",
+      "text_en": "Huan Huan,",
+      "start_ms": 116800,
+      "end_ms": 117800,
+      "source": "gemini"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "只有你",
+      "text_en": "only you",
+      "start_ms": 118690,
+      "end_ms": 119290,
+      "source": "asr#56"
+    },
+    {
+      "speaker": "皇上",
+      "text_zh": "最懂朕的心意。",
+      "text_en": "know my heart best.",
+      "start_ms": 119810,
+      "end_ms": 120970,
+      "source": "asr#57"
+    }
+  ],
+  "vocab_cards": [
+    {
+      "id": "vocab_0000",
+      "word": "response",
+      "norm_word": "response",
+      "dialogue_index": 4,
+      "source": "asr#5",
+      "speaker": "甄嬛",
+      "start_ms": 7660,
+      "end_ms": 8980,
+      "meaning_zh": "回答，回应",
+      "cet_meaning_zh": "作答，回答；响应",
+      "phonetic": "/rɪˈspɒns/",
+      "original_sentence": "They just want a response.",
+      "simple_sentence": "I am waiting for your response.",
+      "explanation_zh": "response 的意思是回答或回应。原句是 They just want a response，意思就是他们只想要一个回应。简单例句是 I am waiting for your response，意思是我在等你的回复。"
+    },
+    {
+      "id": "vocab_0001",
+      "word": "create",
+      "norm_word": "create",
+      "dialogue_index": 21,
+      "source": "asr#22",
+      "speaker": "皇上",
+      "start_ms": 40020,
+      "end_ms": 41620,
+      "meaning_zh": "创造",
+      "cet_meaning_zh": "创造；引起，产生",
+      "phonetic": "/kriˈeɪt/",
+      "original_sentence": "Only you could create this trick.",
+      "simple_sentence": "Please create a new file.",
+      "explanation_zh": "create 的意思是创造。原句是 Only you could create this trick，意思是只有你才能想出这个主意。简单例句是 Please create a new file，意思是请创建一个新文件。"
+    }
+  ]
+}

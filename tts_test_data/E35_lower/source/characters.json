@@ -1,0 +1,28 @@
+{
+  "speakers": [
+    {
+      "char_id": "char_001",
+      "age_group": "young",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 35120,
+          "speaker": "甄嬛"
+        }
+      ],
+      "reason": null
+    },
+    {
+      "char_id": "char_002",
+      "age_group": "middle",
+      "gender": "male",
+      "source_episodes": [
+        {
+          "episode": 35120,
+          "speaker": "皇上"
+        }
+      ],
+      "reason": null
+    }
+  ]
+}

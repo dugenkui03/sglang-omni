@@ -1,0 +1,28 @@
+{
+  "speakers": [
+    {
+      "char_id": "char_001",
+      "age_group": "young",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 37120,
+          "speaker": "安陵容"
+        }
+      ],
+      "reason": null
+    },
+    {
+      "char_id": "char_002",
+      "age_group": "young",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 37120,
+          "speaker": "沈眉庄"
+        }
+      ],
+      "reason": null
+    }
+  ]
+}

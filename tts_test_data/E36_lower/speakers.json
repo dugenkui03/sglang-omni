@@ -1,0 +1,107 @@
+[
+  {
+    "speaker_id": "E36_lower:char_001",
+    "speaker": "太后",
+    "gender": "female",
+    "age_group": "old",
+    "description": "old#female#在寿康宫审问、敲打莞嫔是否干预朝政",
+    "line_ids": [
+      "E36_lower_0000",
+      "E36_lower_0001",
+      "E36_lower_0004",
+      "E36_lower_0005",
+      "E36_lower_0007",
+      "E36_lower_0008",
+      "E36_lower_0012",
+      "E36_lower_0013",
+      "E36_lower_0014",
+      "E36_lower_0026",
+      "E36_lower_0027",
+      "E36_lower_0028",
+      "E36_lower_0039",
+      "E36_lower_0040",
+      "E36_lower_0041",
+      "E36_lower_0042"
+    ]
+  },
+  {
+    "speaker_id": "E36_lower:char_002",
+    "speaker": "莞嫔",
+    "gender": "female",
+    "age_group": "young",
+    "description": "young#female#被太后审问，表明自己没有干政的私心",
+    "line_ids": [
+      "E36_lower_0002",
+      "E36_lower_0003",
+      "E36_lower_0009",
+      "E36_lower_0010",
+      "E36_lower_0011",
+      "E36_lower_0015",
+      "E36_lower_0016",
+      "E36_lower_0017",
+      "E36_lower_0018",
+      "E36_lower_0019",
+      "E36_lower_0020",
+      "E36_lower_0021",
+      "E36_lower_0022",
+      "E36_lower_0023",
+      "E36_lower_0024",
+      "E36_lower_0025",
+      "E36_lower_0029",
+      "E36_lower_0030",
+      "E36_lower_0031",
+      "E36_lower_0032",
+      "E36_lower_0033",
+      "E36_lower_0034",
+      "E36_lower_0035",
+      "E36_lower_0036",
+      "E36_lower_0037",
+      "E36_lower_0038",
+      "E36_lower_0043"
+    ]
+  },
+  {
+    "speaker_id": "E36_lower:char_003",
+    "speaker": "惠贵人",
+    "gender": "female",
+    "age_group": "young",
+    "description": "young#female#在太后身旁捧盘侍奉，因见太后责怪莞嫔而试图开口解围",
+    "line_ids": [
+      "E36_lower_0006"
+    ]
+  },
+  {
+    "speaker_id": "E36_lower:char_004",
+    "speaker": "紫衣妃嫔",
+    "gender": "female",
+    "age_group": "young",
+    "description": "young#female#在宫内刺绣，与宫女分析惠贵人为何生气离开寿康宫",
+    "line_ids": [
+      "E36_lower_0044",
+      "E36_lower_0049",
+      "E36_lower_0050",
+      "E36_lower_0051",
+      "E36_lower_0052",
+      "E36_lower_0055",
+      "E36_lower_0056",
+      "E36_lower_0057",
+      "E36_lower_0058",
+      "E36_lower_0059"
+    ]
+  },
+  {
+    "speaker_id": "E36_lower:char_005",
+    "speaker": "宫女",
+    "gender": "female",
+    "age_group": "young",
+    "description": "young#female#向小主禀报惠贵人和莞嫔离开寿康宫时的情形",
+    "line_ids": [
+      "E36_lower_0045",
+      "E36_lower_0046",
+      "E36_lower_0047",
+      "E36_lower_0048",
+      "E36_lower_0053",
+      "E36_lower_0054"
+    ]
+  }
+]

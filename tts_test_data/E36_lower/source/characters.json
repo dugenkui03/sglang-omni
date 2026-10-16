@@ -1,0 +1,64 @@
+{
+  "speakers": [
+    {
+      "char_id": "char_001",
+      "age_group": "old",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 36120,
+          "speaker": "太后"
+        }
+      ],
+      "reason": null
+    },
+    {
+      "char_id": "char_002",
+      "age_group": "young",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 36120,
+          "speaker": "莞嫔"
+        }
+      ],
+      "reason": null
+    },
+    {
+      "char_id": "char_003",
+      "age_group": "young",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 36120,
+          "speaker": "惠贵人"
+        }
+      ],
+      "reason": null
+    },
+    {
+      "char_id": "char_004",
+      "age_group": "young",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 36120,
+          "speaker": "紫衣妃嫔"
+        }
+      ],
+      "reason": null
+    },
+    {
+      "char_id": "char_005",
+      "age_group": "young",
+      "gender": "female",
+      "source_episodes": [
+        {
+          "episode": 36120,
+          "speaker": "宫女"
+        }
+      ],
+      "reason": null
+    }
+  ]
+}

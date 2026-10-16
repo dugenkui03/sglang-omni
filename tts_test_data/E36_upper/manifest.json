@@ -1,0 +1,30 @@
+{
+  "unit_id": "E36_upper",
+  "title": "甄嬛传 E36 上集",
+  "unit_definition": "One complete previously processed dubbing clip, preserving every original dialogue row.",
+  "source_run": "/Users/dugenkui/workspace/ai_dubbing/test_data/测试输出/english_learning_E36上_重剪_20260727",
+  "source_cache_episode_id": "ep36120",
+  "source_analysis_episode_id": 36120,
+  "line_count": 47,
+  "speaker_count": 2,
+  "last_dialogue_end_ms": 101780,
+  "reference_audio_duration_seconds": 60.52,
+  "reference_audio_format": {
+    "sample_rate_hz": 24000,
+    "channels": 1,
+    "bits_per_sample": 16,
+    "codec": "pcm_s16le"
+  },
+  "lines_path": "E36_upper/lines.jsonl",
+  "speakers_path": "E36_upper/speakers.json",
+  "text_zh_path": "E36_upper/text_zh.txt",
+  "text_en_path": "E36_upper/text_en.txt",
+  "expanded_reference_line_ids": [
+    "E36_upper_0012",
+    "E36_upper_0020",
+    "E36_upper_0038",
+    "E36_upper_0042"
+  ],
+  "path_base": "tts_test_data",
+  "speaker_id_scope": "Local to each unit; no cross-unit character merge is inferred."
+}

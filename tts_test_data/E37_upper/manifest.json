@@ -1,0 +1,29 @@
+{
+  "unit_id": "E37_upper",
+  "title": "甄嬛传 E37 上集",
+  "unit_definition": "One complete previously processed dubbing clip, preserving every original dialogue row.",
+  "source_run": "/Users/dugenkui/workspace/ai_dubbing/test_data/测试输出/english_learning_E37上_v6_20260726",
+  "source_cache_episode_id": "ep37120",
+  "source_analysis_episode_id": 37120,
+  "line_count": 54,
+  "speaker_count": 2,
+  "last_dialogue_end_ms": 149920,
+  "reference_audio_duration_seconds": 76.74,
+  "reference_audio_format": {
+    "sample_rate_hz": 24000,
+    "channels": 1,
+    "bits_per_sample": 16,
+    "codec": "pcm_s16le"
+  },
+  "lines_path": "E37_upper/lines.jsonl",
+  "speakers_path": "E37_upper/speakers.json",
+  "text_zh_path": "E37_upper/text_zh.txt",
+  "text_en_path": "E37_upper/text_en.txt",
+  "expanded_reference_line_ids": [
+    "E37_upper_0013",
+    "E37_upper_0016",
+    "E37_upper_0046"
+  ],
+  "path_base": "tts_test_data",
+  "speaker_id_scope": "Local to each unit; no cross-unit character merge is inferred."
+}
