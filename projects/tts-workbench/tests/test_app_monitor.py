@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from tts_workbench.app import create_app
 from tts_workbench.config import Settings
-from tts_workbench.monitor import MAX_LOG_BYTES, GpuMonitor, optional_number, tail_log
+from tts_workbench.monitor import MAX_LOG_BYTES, optional_number, tail_log
 
 
 def test_authenticated_api_and_static_files(settings: Settings) -> None:
