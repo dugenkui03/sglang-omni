@@ -410,10 +410,11 @@ def create_app(settings: Settings) -> FastAPI:
         limit: int = Query(MAX_LOG_LINES, ge=1, le=MAX_LOG_LINES),
         request_id: str | None = Query(None, min_length=1, max_length=200),
         scope: Literal["all", "system", "inference"] = "all",
+        keyword: str = Query("", max_length=200),
     ) -> LogTail:
         """Follow recent logs or complete records for an exact service request."""
         return await asyncio.to_thread(
-            runtime_from(request).logs.tail, cursor, request_id, limit, scope
+            runtime_from(request).logs.tail, cursor, request_id, limit, scope, keyword
         )
 
     @app.get("/api/workbench/logs/download")

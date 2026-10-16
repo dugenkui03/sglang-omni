@@ -20,10 +20,24 @@ LOG_HEADER = re.compile(
     re.MULTILINE,
 )
 REQUEST_IDS = re.compile(rb"^  request_ids?=(.+)$", re.MULTILINE)
+BODY_REQUEST_IDS = re.compile(
+    rb"""(?:\brequest_id\s*=\s*|["']request_id["']\s*:\s*["'])([A-Za-z0-9_-]+)"""
+)
 ANSI_ESCAPE = re.compile(rb"\x1b\[[0-9;]*m")
 SCAN_CHUNK_BYTES = 1024 * 1024
 DOWNLOAD_CHUNK_BYTES = 64 * 1024
 SYNC_INTERVAL_SECONDS = 2
+
+
+def record_request_ids(record: bytes) -> set[str]:
+    """Index formatter labels and structured coordinator payloads with their original IDs."""
+    match = REQUEST_IDS.search(record)
+    identities = set(match.group(1).strip(b"[]").split(b",")) if match else set()
+    identities.update(BODY_REQUEST_IDS.findall(record))
+    return {value.strip().decode("utf-8", errors="replace") for value in identities} - {
+        "-",
+        "",
+    }
 
 
 def log_records(stream: BinaryIO, end_offset: int) -> Iterator[tuple[int, bytes]]:
@@ -88,6 +102,40 @@ class LogArchive:
             ) WITHOUT ROWID;
             """
         )
+        if self.connection.execute("PRAGMA user_version").fetchone()[0] < 1:
+            with self.connection:
+                last_id = 0
+                while True:
+                    rows = self.connection.execute(
+                        "SELECT id,text FROM log_records WHERE category='system' AND id>? ORDER BY id LIMIT 1000",
+                        (last_id,),
+                    ).fetchall()
+                    if not rows:
+                        break
+                    last_id = rows[-1]["id"]
+                    for row in rows:
+                        identities = record_request_ids(row["text"].encode())
+                        if identities:
+                            self.connection.executemany(
+                                "INSERT OR IGNORE INTO log_requests VALUES(?,?)",
+                                [(identity, row["id"]) for identity in identities],
+                            )
+                            category = (
+                                "inference"
+                                if any(
+                                    value.startswith("speech-") for value in identities
+                                )
+                                else "http"
+                            )
+                            self.connection.execute(
+                                "UPDATE log_records SET category=? WHERE id=?",
+                                (category, row["id"]),
+                            )
+                self.connection.execute("DELETE FROM log_totals")
+                self.connection.execute(
+                    "INSERT INTO log_totals SELECT category,SUM(line_count),MAX(id) FROM log_records GROUP BY category"
+                )
+                self.connection.execute("PRAGMA user_version=1")
 
     def close(self) -> None:
         """Release the archive only after background ingestion and readers finish."""
@@ -125,16 +173,7 @@ class LogArchive:
                 for offset, raw_record in log_records(stream, metadata.st_size):
                     raw_record = ANSI_ESCAPE.sub(b"", raw_record)
                     text = raw_record.decode("utf-8", errors="replace")
-                    match = REQUEST_IDS.search(raw_record)
-                    identities = (
-                        {
-                            value.strip().decode("utf-8", errors="replace")
-                            for value in match.group(1).strip(b"[]").split(b",")
-                        }
-                        - {"-", ""}
-                        if match
-                        else set()
-                    )
+                    identities = record_request_ids(raw_record)
                     category = (
                         "inference"
                         if any(value.startswith("speech-") for value in identities)
@@ -197,11 +236,12 @@ class LogArchive:
         request_id: str | None,
         limit: int,
         scope: Literal["all", "system", "inference"] = "all",
+        keyword: str = "",
     ) -> LogTail:
         """Query all archived history; only the returned display window is bounded."""
         self.synchronize()
         filter_hash = hashlib.sha256(
-            f"{scope}:{request_id or ''}".encode()
+            f"{scope}:{request_id or ''}:{keyword}".encode()
         ).hexdigest()[:16]
         offset = 0
         reset = True
@@ -223,8 +263,11 @@ class LogArchive:
             if scope != "all":
                 conditions.append("category=?")
                 parameters.append(scope)
+            if keyword:
+                conditions.append("instr(lower(records.text),lower(?))>0")
+                parameters.append(keyword)
             predicate = " AND ".join(conditions) or "1=1"
-            if request_id:
+            if request_id or keyword:
                 totals = self.connection.execute(
                     f"SELECT COALESCE(MAX(records.id),0),COALESCE(SUM(records.line_count),0) {source} WHERE {predicate}",
                     parameters,

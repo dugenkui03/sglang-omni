@@ -21,6 +21,8 @@ const state = {
     logLineLimit: 20000,
     logRequestId: "",
     logScope: "all",
+    logKeyword: "",
+    logFilterTimer: null,
     logTruncated: false,
     logLoading: false,
     logError: "",
@@ -327,8 +329,14 @@ async function initialize() {
         element("log-request-id").value = "";
         applyLogRequestFilter();
     });
-    element("log-limit").addEventListener("change", updateLogLimit);
-    element("log-filter").addEventListener("input", renderLogs);
+    element("log-limit").addEventListener("input", updateLogLimit);
+    element("log-filter").addEventListener("input", () => {
+        clearTimeout(state.logFilterTimer);
+        state.logFilterTimer = setTimeout(
+            () => applyLogRequestFilter(false),
+            350,
+        );
+    });
     element("copy-log").addEventListener("click", copyLogs);
     try {
         await generateRunName();

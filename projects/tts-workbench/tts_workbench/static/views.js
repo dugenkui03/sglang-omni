@@ -158,7 +158,7 @@ function applyRequestTaskFilter() {
 
 /** Render recorded request outcomes and explicit sampled-audio availability. */
 function renderRows() {
-    element("request-rows").innerHTML = state.rows.length
+    const rowsHtml = state.rows.length
         ? state.rows
               .map(
                   (record) =>
@@ -166,6 +166,9 @@ function renderRows() {
               )
               .join("")
         : '<tr><td colspan="5" class="table-empty">暂无符合条件的请求记录。</td></tr>';
+    if (element("request-rows").innerHTML !== rowsHtml) {
+        element("request-rows").innerHTML = rowsHtml;
+    }
     element("page-info").textContent =
         `${count(state.total)} 条记录${state.total ? ` · ${state.offset + 1}–${Math.min(state.offset + 30, state.total)}` : ""}`;
     element("previous-page").disabled = state.offset === 0;
@@ -276,6 +279,9 @@ async function refreshLogs() {
     try {
         const query = new URLSearchParams({ limit: state.logLineLimit });
         query.set("scope", state.logScope || "all");
+        if (state.logKeyword) {
+            query.set("keyword", state.logKeyword);
+        }
         if (state.logCursor) {
             query.set("cursor", state.logCursor);
         }
@@ -352,7 +358,7 @@ function restoreLogWindow() {
 }
 
 /** Apply exact server-side request matching without bypassing paused fetching. */
-function applyLogRequestFilter() {
+function applyLogRequestFilter(clearKeyword = true) {
     state.logController?.abort();
     state.logRequestId = element("log-request-id").value.trim();
     state.logScope = element("log-scope").value || "all";
@@ -362,7 +368,10 @@ function applyLogRequestFilter() {
     state.logMatchedLines = null;
     state.logLoading = !state.logsPaused;
     state.logError = "";
-    element("log-filter").value = "";
+    if (clearKeyword) {
+        element("log-filter").value = "";
+    }
+    state.logKeyword = element("log-filter").value.trim();
     const download = element("download-request-log");
     download.hidden = !state.logRequestId;
     download.href = `${API}/logs/download?${new URLSearchParams({ request_id: state.logRequestId })}`;
@@ -471,7 +480,7 @@ function renderLogs() {
               .filter((record) => record.toLowerCase().includes(keyword))
               .join("")
         : state.logText;
-    output.textContent =
+    const rendered =
         visible ||
         (state.logError
             ? state.logError
@@ -484,7 +493,10 @@ function renderLogs() {
                 : state.logRequestId || keyword
                   ? "暂无匹配日志。"
                   : "日志文件已连接，等待新内容…");
-    output.scrollTop = state.logsPaused ? position : output.scrollHeight;
+    if (output.textContent !== rendered) {
+        output.textContent = rendered;
+        output.scrollTop = state.logsPaused ? position : output.scrollHeight;
+    }
 }
 
 /** Copy visible logs with a fallback for HTTP hosts lacking clipboard access. */

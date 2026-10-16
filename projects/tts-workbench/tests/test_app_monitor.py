@@ -361,3 +361,35 @@ def test_recent_gpu_window_survives_restart_without_tasks(tmp_path: Path) -> Non
         history = store.recent_gpu_history()
         assert len(history) == 1
         assert history[0] == sample
+
+
+def test_archive_indexes_payload_ids_and_searches_historical_keywords(
+    tmp_path: Path,
+) -> None:
+    """Include coordinator payload IDs and startup records beyond the display window."""
+    path = tmp_path / "server.log"
+    startup = request_record("request_id=-", "Application startup complete")
+    payload = request_record(
+        "request_id=-", '{"request_id": "speech-a", "stage": "preprocess"}'
+    )
+    path.write_text(
+        startup + payload + request_record("request_id=speech-other", "other") * 100
+    )
+    with closing(LogArchive(tmp_path, path)) as archive:
+        assert archive.tail(None, "speech-a", 100).text == payload
+        assert archive.tail(None, None, 100, "system", "STARTUP").text == startup
+        assert archive.tail(None, None, 100, "inference", "preprocess").text == payload
+        assert archive.tail(None, "speech-a-extra", 100).matched_lines == 0
+        with archive.connection:
+            archive.connection.execute(
+                "DELETE FROM log_requests WHERE request_id='speech-a'"
+            )
+            archive.connection.execute(
+                "UPDATE log_records SET category='system' WHERE text=?", (payload,)
+            )
+            archive.connection.execute("PRAGMA user_version=0")
+    with closing(LogArchive(tmp_path, path)) as archive:
+        assert archive.tail(None, "speech-a", 100).text == payload
+        assert (
+            archive.tail(None, None, 100, "inference", "preprocess").matched_lines == 6
+        )

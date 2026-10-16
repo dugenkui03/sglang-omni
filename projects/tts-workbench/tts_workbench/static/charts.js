@@ -1,5 +1,6 @@
 /** Render small, dependency-free charts from measured observations only. */
 "use strict";
+const LIVE_CHART_MAX_GAP_SECONDS = 10;
 
 /** Escape external text before it enters a generated HTML or SVG fragment. */
 function escapeText(value) {
@@ -87,10 +88,14 @@ function drawChart(
         const coordinates = valid.map(
             (point) => `${horizontal(point.time)},${vertical(point.value)}`,
         );
-        if (index === 0 && valid.length > 1) {
+        if (!timeRange && index === 0 && valid.length > 1) {
             svg += `<polygon points="${horizontal(valid[0].time)},${height - bottom} ${coordinates.join(" ")} ${horizontal(valid.at(-1).time)},${height - bottom}" fill="${line.color}" opacity=".06"/>`;
         }
-        svg += `<polyline points="${coordinates.join(" ")}" fill="none" stroke="${line.color}" stroke-width="2" stroke-linejoin="round"/>`;
+        const segments = coordinates.map(
+            (coordinate, pointIndex) =>
+                `${pointIndex === 0 || (timeRange && valid[pointIndex].time - valid[pointIndex - 1].time > LIVE_CHART_MAX_GAP_SECONDS) ? "M" : "L"}${coordinate}`,
+        );
+        svg += `<path d="${segments.join(" ")}" fill="none" stroke="${line.color}" stroke-width="2" stroke-linejoin="round"/>`;
         valid.forEach((point) => {
             svg += `<circle cx="${horizontal(point.time)}" cy="${vertical(point.value)}" r="${valid.length === 1 ? 3 : 2}" fill="${line.color}"><title>${escapeText(line.label)} · ${shortTime(point.time)} · ${point.value.toFixed(2)} ${escapeText(unit)}</title></circle>`;
         });
