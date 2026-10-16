@@ -6,17 +6,6 @@ function renderDetail(detail) {
     state.detail = detail;
     const statistics = detail?.statistics ?? {},
         run = detail?.run;
-    element("stat-sent").textContent = count(statistics.sent);
-    element("stat-inflight").textContent =
-        `进行中 ${count(statistics.inflight)}`;
-    element("stat-success").textContent = count(statistics.success);
-    const finished = (statistics.success ?? 0) + (statistics.failed ?? 0);
-    element("stat-rate").textContent =
-        `成功率 ${finished ? ((statistics.success / finished) * 100).toFixed(1) + "%" : "—"}`;
-    element("stat-failed").textContent = count(statistics.failed);
-    element("stat-fail-detail").textContent =
-        `超时 ${count(statistics.timeout)} · 截断 ${count(statistics.truncated)}`;
-    element("stat-p95").textContent = latency(statistics.p95_latency_ms);
     element("latency-average").textContent = latency(
         statistics.average_latency_ms,
     );
@@ -116,17 +105,52 @@ function renderDetail(detail) {
 
 /** Read bounded request pages without inserting untrusted response HTML. */
 async function refreshRequests() {
-    if (!state.selectedRun) {
+    const taskName = state.requestTaskName,
+        runId = state.selectedRun,
+        offset = state.offset,
+        failuresOnly = element("failures-only").checked;
+    if (!runId && !taskName) {
         state.rows = [];
+        state.total = 0;
         renderRows();
         return;
     }
-    const page = await api(
-        `/runs/${state.selectedRun}/requests?offset=${state.offset}&limit=30&failures_only=${element("failures-only").checked}`,
-    );
+    const query = new URLSearchParams({
+        offset,
+        limit: 30,
+        failures_only: failuresOnly,
+    });
+    if (taskName) {
+        query.set("task_name", taskName);
+    }
+    const path = taskName ? "/requests" : `/runs/${runId}/requests`;
+    const page = await api(`${path}?${query}`);
+    if (
+        taskName !== state.requestTaskName ||
+        runId !== state.selectedRun ||
+        offset !== state.offset ||
+        failuresOnly !== element("failures-only").checked
+    ) {
+        return;
+    }
     state.rows = page.records;
     state.total = page.total;
     renderRows();
+}
+
+/** Search task names across stored history while keeping normal task selection intact. */
+function applyRequestTaskFilter() {
+    state.requestTaskName = element("request-task-name").value.trim();
+    state.offset = 0;
+    state.rows = [];
+    state.total = 0;
+    element("request-search-scope").textContent = state.requestTaskName
+        ? `全部历史任务 · 名称包含「${state.requestTaskName}」`
+        : "当前所选任务";
+    element("result-audio").pause();
+    element("result-player").hidden = true;
+    renderRows();
+    poll();
 }
 
 /** Render recorded request outcomes and explicit sampled-audio availability. */
@@ -135,7 +159,7 @@ function renderRows() {
         ? state.rows
               .map(
                   (record) =>
-                      `<tr><td>#${record.sequence}<small>${shortTime(record.started_at)}</small></td><td><button class="row-text ellipsis" data-request="${record.id}" title="${escapeText(record.text)}">${escapeText(record.text)}</button><small>${escapeText(record.speaker)} · ${escapeText(record.line_id)}${record.reference_text_needs_review ? " · 参考待复核" : ""}</small></td><td><span class="badge ${record.status === "success" ? "" : record.status === "inflight" ? "neutral" : "error"}">${statusLabels[record.status]}</span></td><td>${latency(record.latency_ms)}</td><td><div class="request-actions">${record.audio_path ? `<button class="text-button" data-play="${record.id}">▶ 试听</button>` : ""}<button class="text-button" data-request="${record.id}">详情</button></div></td></tr>`,
+                      `<tr><td>#${record.sequence}<small>${shortTime(record.started_at)}</small></td><td><button class="row-text ellipsis" data-request="${record.id}" title="${escapeText(record.text)}">${escapeText(record.text)}</button><small>${escapeText(record.speaker)} · ${escapeText(record.line_id)}${record.reference_text_needs_review ? " · 参考待复核" : ""}</small>${record.run_name ? `<small>任务：${escapeText(record.run_name)}</small>` : ""}</td><td><span class="badge ${record.status === "success" ? "" : record.status === "inflight" ? "neutral" : "error"}">${statusLabels[record.status]}</span></td><td>${latency(record.latency_ms)}</td><td><div class="request-actions">${record.audio_path ? `<button class="text-button" data-play="${record.id}">▶ 试听</button>` : ""}<button class="text-button" data-request="${record.id}">详情</button></div></td></tr>`,
               )
               .join("")
         : '<tr><td colspan="5" class="table-empty">暂无符合条件的请求记录。</td></tr>';
@@ -194,6 +218,9 @@ async function refreshLogs() {
         if (state.logCursor) {
             query.set("cursor", state.logCursor);
         }
+        if (state.logRequestId) {
+            query.set("request_id", state.logRequestId);
+        }
         const result = await api(`/logs?${query}`, {
             signal: AbortSignal.any([
                 controller.signal,
@@ -210,6 +237,9 @@ async function refreshLogs() {
             return;
         }
         state.logCursor = result.cursor;
+        state.logTruncated = result.reset
+            ? result.truncated
+            : state.logTruncated || result.truncated;
         state.logText = (
             (result.reset ? "" : state.logText) + result.text
         ).replace(/\x1b\[[0-9;]*m/g, "");
@@ -222,6 +252,50 @@ async function refreshLogs() {
         }
     } finally {
         state.logController = null;
+    }
+}
+
+/** Expand the existing log panel without losing its contents or fetch controls. */
+function toggleLogMaximized() {
+    const dialog = element("log-dialog");
+    if (dialog.open) {
+        dialog.close();
+        return;
+    }
+    const position = element("log-output").scrollTop;
+    element("maximize-log").textContent = "还原";
+    element("maximize-log").setAttribute("aria-expanded", "true");
+    dialog.append(element("tab-logs"));
+    dialog.showModal();
+    element("log-output").scrollTop = position;
+}
+
+/** Restore layout and focus after the restore button or the native Escape key. */
+function restoreLogWindow() {
+    const position = element("log-output").scrollTop;
+    element("log-home").append(element("tab-logs"));
+    const button = element("maximize-log");
+    button.textContent = "最大化";
+    button.setAttribute("aria-expanded", "false");
+    button.focus({ preventScroll: true });
+    element("log-output").scrollTop = position;
+}
+
+/** Apply exact server-side request matching without bypassing paused fetching. */
+function applyLogRequestFilter() {
+    state.logController?.abort();
+    state.logRequestId = element("log-request-id").value.trim();
+    state.logCursor = null;
+    state.logText = "";
+    state.logTruncated = false;
+    element("log-filter").value = "";
+    const download = element("download-request-log");
+    download.hidden = !state.logRequestId;
+    download.href = `${API}/logs/download?${new URLSearchParams({ request_id: state.logRequestId })}`;
+    trimLogWindow();
+    renderLogs();
+    if (!state.logsPaused) {
+        poll();
     }
 }
 
@@ -272,23 +346,61 @@ function trimLogWindow() {
     if (trailingNewline) {
         lines.pop();
     }
-    const retained = lines.slice(-state.logLineLimit);
-    state.logText = retained.join("\n") + (trailingNewline ? "\n" : "");
+    if (state.logRequestId) {
+        const records = splitLogRecords(state.logText);
+        let retainedLines = 0,
+            firstRetained = records.length;
+        for (let index = records.length - 1; index >= 0; index -= 1) {
+            const recordLines = records[index]
+                .replace(/\n$/, "")
+                .split("\n").length;
+            if (retainedLines + recordLines > state.logLineLimit) {
+                state.logTruncated = true;
+                break;
+            }
+            retainedLines += recordLines;
+            firstRetained = index;
+        }
+        state.logText = records.slice(firstRetained).join("");
+    } else {
+        state.logText =
+            lines.slice(-state.logLineLimit).join("\n") +
+            (trailingNewline ? "\n" : "");
+    }
+    const retainedCount = state.logText
+        ? state.logText.replace(/\n$/, "").split("\n").length
+        : 0;
     element("log-window-count").textContent =
-        `当前 ${count(retained.length)} 行 · 保留最近 ${count(state.logLineLimit)} 行，最多 20,000 行。`;
+        `当前 ${count(retainedCount)} 行 · 保留最近 ${count(state.logLineLimit)} 行，最多 20,000 行。`;
+    element("log-truncation").hidden = !state.logTruncated;
 }
 
-/** Filter only the displayed window while preserving its unfiltered buffer. */
+/** Split on formatter headers so keyword matching preserves every record line. */
+function splitLogRecords(text) {
+    return text
+        .split(
+            /(?=^\[\d{2}:\d{2}:\d{2}\] (?:DEBUG|INFO|WARNING|ERROR|CRITICAL)\b)/m,
+        )
+        .filter(Boolean);
+}
+
+/** Match whole log records so source locations and multiline details stay visible. */
 function renderLogs() {
     const keyword = element("log-filter").value.toLowerCase(),
         output = element("log-output");
     const position = output.scrollTop;
-    output.textContent = keyword
-        ? state.logText
-              .split("\n")
-              .filter((line) => line.toLowerCase().includes(keyword))
-              .join("\n")
-        : state.logText || "日志文件已连接，等待新内容…";
+    const visible = keyword
+        ? splitLogRecords(state.logText)
+              .filter((record) => record.toLowerCase().includes(keyword))
+              .join("")
+        : state.logText;
+    output.textContent =
+        visible ||
+        (state.logsPaused
+            ? "已暂停获取；恢复获取后查询日志。"
+            : state.logRequestId || keyword
+              ? "暂无匹配日志。"
+              : "日志文件已连接，等待新内容…");
     output.scrollTop = state.logsPaused ? position : output.scrollHeight;
 }
 

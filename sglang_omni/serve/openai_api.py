@@ -76,6 +76,7 @@ from sglang_omni.http.admin_auth import (
     resolve_admin_api_key,
 )
 from sglang_omni.http.favicon import register_favicon
+from sglang_omni.http.request_logging import RequestLoggingApp
 from sglang_omni.proto import EXPLICIT_STAGE_SAMPLING_PARAMS_KEY
 from sglang_omni.proto.admin import AdminResponse
 from sglang_omni.serve.generation_params import (
@@ -140,7 +141,6 @@ from sglang_omni.serve.streaming import (
 )
 from sglang_omni.serve.transcriptions import LongAudioAdmission, register_transcriptions
 from sglang_omni.serve.translations import register_translations
-from sglang_omni.utils.request_context import request_log_context
 
 logger = logging.getLogger(__name__)
 HTTP_DISCONNECT_POLL_INTERVAL_S = 0.05
@@ -273,7 +273,7 @@ def create_app(
     Returns:
         Configured FastAPI application.
     """
-    app = FastAPI(title="sglang-omni", version=__version__)
+    app = RequestLoggingApp(title="sglang-omni", version=__version__)
 
     app.add_middleware(
         CORSMiddleware,
@@ -1550,14 +1550,12 @@ def register_speech(app: FastAPI) -> None:
 
     @app.post("/v1/audio/speech")
     async def create_speech(request: Request) -> Response:
-        """Scope validation and HTTP handling, including failed request responses."""
-        request_id = f"speech-{uuid.uuid4()}"
-        with request_log_context(request_id):
-            logger.info("Speech request received")
-            response = await create_speech_response(request, request_id)
-            response.headers["X-Request-Id"] = request_id
-            logger.info(f"Speech response ready: HTTP {response.status_code}")
-            return response
+        """Reuse the HTTP identity for validation, model execution and access logs."""
+        request_id = request.state.request_id
+        logger.info("Speech request received")
+        response = await create_speech_response(request, request_id)
+        logger.info(f"Speech response ready: HTTP {response.status_code}")
+        return response
 
     async def create_speech_response(request: Request, request_id: str) -> Response:
         """Run the existing speech contract inside its request log scope."""
@@ -1676,11 +1674,14 @@ def register_speech(app: FastAPI) -> None:
 
 
 def register_speech_batch(app: FastAPI) -> None:
+    """Keep batch processing tied to its HTTP request identity."""
+
     @app.post("/v1/audio/speech/batch")
     async def create_speech_batch(request: Request) -> JSONResponse:
+        """Reuse the HTTP identity as the parent of all speech batch items."""
         client: Client = app.state.client
         speech_service: SpeechRequestValidator = app.state.speech_service
-        request_id = f"speech-batch-{uuid.uuid4()}"
+        request_id = request.state.request_id
         try:
             payload = await request.json()
             batch = await asyncio.to_thread(speech_service.parse_batch_request, payload)

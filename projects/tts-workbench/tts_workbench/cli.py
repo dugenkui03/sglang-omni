@@ -35,7 +35,7 @@ def main() -> None:
         "--log-file", type=Path, help="Read-only TTS stdout/stderr log file"
     )
     parser.add_argument("--host", default="127.0.0.1", help="Workbench listen address")
-    parser.add_argument("--port", type=int, default=7861, help="Workbench HTTP port")
+    parser.add_argument("--port", type=int, default=8081, help="Workbench HTTP port")
     parser.add_argument(
         "--password-env",
         default="TTS_WORKBENCH_PASSWORD",

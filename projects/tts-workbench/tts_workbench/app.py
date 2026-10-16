@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -38,6 +38,7 @@ from tts_workbench.records import (
     RunStatistics,
     TimelinePoint,
 )
+from tts_workbench.request_logs import download_request_log, tail_request_log
 from tts_workbench.runner import Runner
 from tts_workbench.snapshots import HttpRequestDetails
 from tts_workbench.speech import create_speech_payload
@@ -248,6 +249,14 @@ def create_app(settings: Settings) -> FastAPI:
         """Read the configured target's health and model list."""
         return await runtime_from(request).service.get()
 
+    @app.get("/api/workbench/task-name")
+    async def task_name(request: Request) -> dict[str, str]:
+        """Preview the fixed model's next name; creation allocates the actual sequence."""
+        name = await asyncio.to_thread(
+            runtime_from(request).store.next_run_name, RunConfig().model
+        )
+        return {"name": name}
+
     @app.get("/api/workbench/runs")
     async def runs(request: Request) -> RunCollection:
         """Return recent tasks without losing the active-task identity."""
@@ -308,6 +317,24 @@ def create_app(settings: Settings) -> FastAPI:
         await asyncio.to_thread(store.get_run, run_id)
         return await asyncio.to_thread(
             store.request_page, run_id, offset, limit, failures_only
+        )
+
+    @app.get("/api/workbench/requests")
+    async def search_requests(
+        request: Request,
+        task_name: str = Query(min_length=1, max_length=100),
+        offset: int = Query(0, ge=0),
+        limit: int = Query(30, ge=1, le=200),
+        failures_only: bool = False,
+    ) -> RequestPage:
+        """Search all stored task names without restricting the history selector window."""
+        return await asyncio.to_thread(
+            runtime_from(request).store.request_page,
+            None,
+            offset,
+            limit,
+            failures_only,
+            task_name,
         )
 
     @app.get("/api/workbench/requests/{request_id}/http")
@@ -377,9 +404,27 @@ def create_app(settings: Settings) -> FastAPI:
     async def logs(
         cursor: str | None = Query(None, max_length=160),
         limit: int = Query(MAX_LOG_LINES, ge=1, le=MAX_LOG_LINES),
+        request_id: str | None = Query(None, min_length=1, max_length=200),
     ) -> LogTail:
-        """Tail the configured TTS log, including rotation and truncation."""
+        """Follow recent logs or complete records for an exact service request."""
+        if request_id:
+            return await asyncio.to_thread(
+                tail_request_log, settings.log_file, cursor, request_id, limit
+            )
         return await asyncio.to_thread(tail_log, settings.log_file, cursor, limit)
+
+    @app.get("/api/workbench/logs/download")
+    async def download_logs(
+        request_id: str = Query(min_length=1, max_length=200),
+    ) -> StreamingResponse:
+        """Export all matching records from the configured file, beyond the UI limit."""
+        if settings.log_file is None or not settings.log_file.is_file():
+            raise HTTPException(404, "The configured TTS log is unavailable")
+        return StreamingResponse(
+            download_request_log(settings.log_file, request_id),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="request-logs.txt"'},
+        )
 
     app.mount("/static", StaticFiles(directory=STATIC_DIRECTORY), name="static")
     return app

@@ -78,11 +78,17 @@ class RunStatistics(BaseModel):
     measured_audio_count: int = 0
 
 
+class NamedRequestRecord(RequestRecord):
+    """Include the owning task name in read-only request search results."""
+
+    run_name: str
+
+
 class RequestPage(BaseModel):
     """Return a bounded page of attempts."""
 
     total: int
-    records: list[RequestRecord]
+    records: list[NamedRequestRecord]
 
 
 class TimelinePoint(BaseModel):

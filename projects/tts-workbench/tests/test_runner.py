@@ -168,6 +168,40 @@ async def test_default_english_workload_and_editable_name(
     store.close()
 
 
+async def test_default_names_survive_cleanup_and_restart(
+    settings: Settings, wav_bytes: bytes
+) -> None:
+    """Allocate model sequences at creation, independent of previews and retained tasks."""
+
+    async def transport(request: httpx.Request) -> httpx.Response:
+        """Finish isolated tasks without sending traffic to a model service."""
+        return httpx.Response(200, content=wav_bytes)
+
+    config = RunConfig(mode="single", line_ids=["unit_0"])
+    store = Store(settings.results_directory)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        runner = Runner(settings, Dataset(settings.data_directory), store, client)
+        assert store.next_run_name(config.model) == "qwen3-tts-1.7b-base-001"
+        assert store.next_run_name(config.model) == "qwen3-tts-1.7b-base-001"
+        first = await runner.start(config)
+        await runner.task
+        assert first.name == "qwen3-tts-1.7b-base-001"
+        await runner.cleanup(first.id)
+        store.close()
+        store = Store(settings.results_directory)
+        runner = Runner(settings, Dataset(settings.data_directory), store, client)
+        assert store.next_run_name(config.model) == "qwen3-tts-1.7b-base-002"
+        edited = await runner.start(config.model_copy(update={"name": "手动名称"}))
+        await runner.task
+        assert edited.name == "手动名称"
+        third = await runner.start(config)
+        await runner.task
+        assert third.name == "qwen3-tts-1.7b-base-003"
+        assert store.get_run(third.id).name == third.name
+        assert store.next_run_name("another-model") == "another-model-001"
+    store.close()
+
+
 async def test_duration_ends_without_browser(
     settings: Settings, wav_bytes: bytes
 ) -> None:

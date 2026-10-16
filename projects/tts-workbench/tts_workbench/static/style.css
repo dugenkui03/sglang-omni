@@ -76,98 +76,6 @@ small,
 [hidden] {
     display: none !important;
 }
-.sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    width: 208px;
-    background: #141e32;
-    padding: 32px 20px;
-    color: #b5bfd2;
-    display: flex;
-    flex-direction: column;
-}
-.brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    color: white;
-    font-size: 16px;
-    letter-spacing: 1.4px;
-    font-weight: 700;
-    margin-bottom: 52px;
-}
-.brand small {
-    display: block;
-    color: #93a1bc;
-    font-weight: 400;
-    letter-spacing: 1px;
-    font-size: 10px;
-    margin-top: 7px;
-}
-.brand-mark {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    background: #4263eb;
-    border-radius: 11px;
-    width: 37px;
-    height: 38px;
-    flex-shrink: 0;
-}
-.brand-mark i {
-    width: 3px;
-    height: 10px;
-    background: white;
-    border-radius: 5px;
-}
-.brand-mark i:nth-child(2),
-.brand-mark i:nth-child(4) {
-    height: 20px;
-}
-.brand-mark i:nth-child(3) {
-    height: 27px;
-}
-.nav-label {
-    font-size: 10px;
-    letter-spacing: 1.6px;
-    color: #64738e;
-    margin: 0 12px 16px;
-}
-.nav-item {
-    background: none;
-    border: 0;
-    color: #9cabc3;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    text-align: left;
-    padding: 13px 14px;
-    border-radius: 8px;
-    margin-bottom: 8px;
-    font-size: 13px;
-}
-.nav-item > span {
-    font-size: 20px;
-    width: 22px;
-    text-align: center;
-}
-.nav-item.active {
-    background: #283956;
-    color: #e8edff;
-}
-.sidebar-note {
-    margin: 42px 6px 0;
-    font-size: 11px;
-    color: #a2b0c7;
-    line-height: 1.8;
-}
-.sidebar-note p {
-    font-size: 11px;
-    color: #70829f;
-    margin-top: 8px;
-}
-.small-dot,
 .live-dot {
     display: inline-block;
     width: 6px;
@@ -176,28 +84,8 @@ small,
     border-radius: 100%;
     margin-right: 5px;
 }
-.sidebar-footer {
-    margin-top: auto;
-    border-top: 1px solid #2a3548;
-    padding: 24px 8px 0;
-    font-size: 11px;
-    line-height: 2.1;
-}
-.sidebar-footer strong {
-    float: right;
-    font-size: 10px;
-    color: #c4cedf;
-}
-.sidebar-footer small {
-    display: block;
-    color: #667892;
-    font-family: monospace;
-    font-size: 10px;
-}
 main {
-    margin-left: 208px;
     padding: 35px 34px 0;
-    max-width: 1800px;
 }
 .page-header {
     display: flex;
@@ -330,6 +218,22 @@ h1 {
     grid-template-columns: 300px minmax(0, 1fr);
     gap: 23px;
     align-items: start;
+}
+#workspace.configuration-collapsed {
+    grid-template-columns: 44px minmax(0, 1fr);
+}
+.configuration-collapsed .configuration .panel-heading {
+    padding: 16px 8px;
+    justify-content: center;
+    border-bottom: 0;
+}
+.configuration-collapsed .configuration .panel-heading > div {
+    display: none;
+}
+.configuration-collapsed #toggle-config {
+    writing-mode: vertical-rl;
+    letter-spacing: 3px;
+    line-height: 1.6;
 }
 .panel {
     background: #fff;
@@ -579,44 +483,6 @@ audio {
     display: flex;
     gap: 17px;
     align-items: center;
-    white-space: nowrap;
-}
-.metric-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 13px;
-    margin-bottom: 17px;
-}
-.metric {
-    border: 1px solid var(--border);
-    background: #fff;
-    border-radius: 9px;
-    padding: 18px 17px;
-}
-.metric > span {
-    font-size: 11px;
-    color: #8290a5;
-    display: block;
-    white-space: nowrap;
-}
-.metric strong {
-    font-size: 30px;
-    line-height: 1.2;
-    display: block;
-    margin: 14px 0 11px;
-    letter-spacing: -0.6px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-.metric strong .unit {
-    font-size: 13px;
-    color: #9aa5b7;
-    font-weight: 400;
-    margin-left: 5px;
-}
-.metric small {
-    font-size: 10px;
-    color: #99a4b5;
     white-space: nowrap;
 }
 .metric-dot {
@@ -1030,6 +896,32 @@ td .ellipsis {
 }
 .log-panel .panel-heading .toolbar-actions {
     flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.log-request-filter,
+.request-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px 17px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: #71839e;
+}
+.log-request-filter input,
+.request-search input {
+    flex: 1 1 240px;
+    min-width: 120px;
+    font-size: 11px;
+}
+.log-request-filter .button,
+.request-search .button {
+    padding: 8px 12px;
+}
+.log-request-filter a {
+    white-space: nowrap;
 }
 .log-tools {
     display: flex;
@@ -1103,11 +995,63 @@ dialog::backdrop {
     background: #15203966;
     backdrop-filter: blur(3px);
 }
+body:has(#log-dialog[open]) {
+    overflow: hidden;
+}
+#log-dialog {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    overflow: hidden;
+}
+#log-dialog[open],
+#log-dialog .log-panel {
+    display: flex;
+    flex-direction: column;
+}
+#log-dialog .log-panel {
+    flex: 1;
+    min-height: 0;
+    border: 0;
+}
+#log-dialog .log-output {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+}
+#log-dialog .panel-heading,
+#log-dialog .log-request-filter,
+#log-dialog .log-tools,
+#log-dialog .log-footnote {
+    flex-shrink: 0;
+}
 .dialog-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
+}
+#request-dialog {
+    padding: 0;
+    overflow: hidden;
+}
+#request-dialog[open] {
+    display: flex;
+    flex-direction: column;
+}
+#request-dialog .dialog-header {
+    flex-shrink: 0;
+    padding: 18px 24px;
+    margin: 0;
+    border-bottom: 1px solid var(--border);
+    background: white;
+}
+#request-detail {
+    min-height: 0;
+    overflow: auto;
+    padding: 24px;
 }
 .detail-grid {
     display: grid;
@@ -1191,29 +1135,12 @@ dialog::backdrop {
     }
 }
 @media (max-width: 1180px) {
-    .sidebar {
-        width: 178px;
-        padding: 28px 15px;
-    }
     main {
-        margin-left: 178px;
         padding: 28px 22px 0;
     }
     .workspace-grid {
         grid-template-columns: 270px minmax(0, 1fr);
         gap: 17px;
-    }
-    .metric-grid {
-        gap: 8px;
-    }
-    .metric {
-        padding: 16px 11px;
-    }
-    .metric strong {
-        font-size: 26px;
-    }
-    .metric small {
-        font-size: 9px;
     }
     .chart-grid {
         grid-template-columns: 1fr;
@@ -1251,43 +1178,12 @@ dialog::backdrop {
     }
 }
 @media (max-width: 850px) {
-    .sidebar {
-        width: 68px;
-        padding: 23px 10px;
-    }
-    .brand {
-        justify-content: center;
-        margin-bottom: 32px;
-    }
-    .brand > span:last-child,
-    .nav-label,
-    .sidebar-note,
-    .sidebar-footer {
-        display: none;
-    }
-    .nav-item {
-        font-size: 0;
-        justify-content: center;
-        padding: 13px 0;
-        gap: 0;
-    }
-    .nav-item > span {
-        font-size: 20px;
-    }
-    .brand-mark {
-        width: 34px;
-        height: 35px;
-    }
     main {
-        margin-left: 68px;
         padding: 24px 20px 0;
     }
     .workspace-grid {
         grid-template-columns: 245px minmax(0, 1fr);
         gap: 14px;
-    }
-    .metric-grid {
-        grid-template-columns: 1fr 1fr;
     }
     .connection-bar {
         gap: 8px;
@@ -1317,9 +1213,6 @@ dialog::backdrop {
     }
 }
 @media (max-width: 680px) {
-    .sidebar {
-        display: none;
-    }
     main {
         margin-left: 0;
         padding: 22px 16px 0;
@@ -1375,24 +1268,6 @@ dialog::backdrop {
         flex-wrap: wrap;
         gap: 8px;
     }
-    .metric-grid {
-        grid-template-columns: repeat(4, 1fr);
-        gap: 7px;
-    }
-    .metric {
-        padding: 14px 10px;
-    }
-    .metric strong {
-        font-size: 23px;
-    }
-    .metric > span {
-        font-size: 10px;
-    }
-    .metric small {
-        font-size: 8px;
-        white-space: normal;
-        line-height: 1.8;
-    }
     .progress-header {
         flex-direction: row;
         flex-wrap: wrap;
@@ -1424,9 +1299,6 @@ dialog::backdrop {
     }
     .log-tools #log-filter {
         width: 180px;
-    }
-    .metric strong .unit {
-        font-size: 10px;
     }
     .event-panel .panel-heading .muted {
         font-size: 10px;

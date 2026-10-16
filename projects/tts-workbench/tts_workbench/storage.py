@@ -11,6 +11,7 @@ from tts_workbench.config import RunConfig
 from tts_workbench.records import (
     EventRecord,
     GpuSample,
+    NamedRequestRecord,
     RequestPage,
     RequestRecord,
     RunRecord,
@@ -49,6 +50,9 @@ class Store:
                 line_ids_json TEXT NOT NULL, dataset_fingerprint TEXT NOT NULL,
                 skipped_count INTEGER NOT NULL DEFAULT 0, error TEXT,
                 audio_bytes_saved INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS run_name_counters (
+                model TEXT PRIMARY KEY, last_sequence INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS requests (
                 id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
@@ -98,9 +102,28 @@ class Store:
                 (now,),
             )
 
+    def next_run_name(self, model: str) -> str:
+        """Preview a name without consuming a sequence or depending on retained runs."""
+        with self.lock:
+            row = self.connection.execute(
+                "SELECT last_sequence FROM run_name_counters WHERE model=?", (model,)
+            ).fetchone()
+            sequence = row["last_sequence"] + 1 if row is not None else 1
+            return f"{model}-{sequence:03d}"
+
     def create_run(self, run: RunRecord) -> None:
-        """Persist configuration before dispatching any network requests."""
+        """Allocate a durable sequence with the task before any request is dispatched."""
         with self.lock, self.connection:
+            self.connection.execute(
+                "INSERT INTO run_name_counters(model,last_sequence) VALUES(?,1) "
+                "ON CONFLICT(model) DO UPDATE SET last_sequence=last_sequence+1",
+                (run.config.model,),
+            )
+            sequence = self.connection.execute(
+                "SELECT last_sequence FROM run_name_counters WHERE model=?",
+                (run.config.model,),
+            ).fetchone()["last_sequence"]
+            run.name = run.name.strip() or f"{run.config.model}-{sequence:03d}"
             self.connection.execute(
                 "INSERT INTO runs(id,name,status,created_at,config_json,line_ids_json,dataset_fingerprint) "
                 "VALUES(?,?,?,?,?,?,?)",
@@ -202,23 +225,44 @@ class Store:
             return [EventRecord.model_validate(dict(row)) for row in reversed(rows)]
 
     def request_page(
-        self, run_id: str, offset: int, limit: int, failures_only: bool
+        self,
+        run_id: str | None,
+        offset: int,
+        limit: int,
+        failures_only: bool,
+        task_name: str | None = None,
     ) -> RequestPage:
-        """Use SQL pagination so day-long tests do not fill application memory."""
-        clause = "run_id=?" + (
-            " AND status NOT IN ('success','inflight')" if failures_only else ""
+        """Page one task or all tasks whose names contain the literal search text."""
+        clauses = ["1=1"]
+        parameters: list[str | int] = []
+        if run_id is not None:
+            clauses.append("requests.run_id=?")
+            parameters.append(run_id)
+        if task_name is not None:
+            clauses.append("runs.name LIKE ? ESCAPE '\\'")
+            escaped_name = (
+                task_name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            parameters.append(f"%{escaped_name}%")
+        if failures_only:
+            clauses.append("requests.status NOT IN ('success','inflight')")
+        source = (
+            "FROM requests JOIN runs ON runs.id=requests.run_id WHERE "
+            + " AND ".join(clauses)
         )
         with self.lock:
             total = self.connection.execute(
-                f"SELECT COUNT(*) FROM requests WHERE {clause}", (run_id,)
+                f"SELECT COUNT(*) {source}",
+                parameters,
             ).fetchone()[0]
             rows = self.connection.execute(
-                f"SELECT * FROM requests WHERE {clause} ORDER BY sequence DESC LIMIT ? OFFSET ?",
-                (run_id, limit, offset),
+                f"SELECT requests.*, runs.name AS run_name {source} "
+                "ORDER BY requests.started_at DESC, requests.sequence DESC, requests.id DESC LIMIT ? OFFSET ?",
+                [*parameters, limit, offset],
             ).fetchall()
             return RequestPage(
                 total=total,
-                records=[RequestRecord.model_validate(dict(row)) for row in rows],
+                records=[NamedRequestRecord.model_validate(dict(row)) for row in rows],
             )
 
     def get_request(self, request_id: str) -> RequestRecord:

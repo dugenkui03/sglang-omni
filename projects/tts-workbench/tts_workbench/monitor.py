@@ -46,6 +46,7 @@ class LogTail(BaseModel):
     cursor: str | None = None
     text: str = ""
     reset: bool = False
+    truncated: bool = False
     error: str | None = None
 
 

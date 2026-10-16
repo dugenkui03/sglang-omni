@@ -10,6 +10,7 @@ const state = {
     activeId: null,
     detail: null,
     rows: [],
+    requestTaskName: "",
     offset: 0,
     total: 0,
     logCursor: null,
@@ -17,9 +18,12 @@ const state = {
     logsPaused: false,
     logController: null,
     logLineLimit: 20000,
+    logRequestId: "",
+    logTruncated: false,
     polling: false,
     servicePolling: false,
     submitting: false,
+    generatedRunName: "",
 };
 const statusLabels = {
     running: "运行中",
@@ -188,7 +192,12 @@ async function poll() {
 
 /** Attach controls once and initialize the actual dataset and task history. */
 async function initialize() {
-    generateRunName();
+    setConfigurationCollapsed(
+        localStorage.getItem("workbench-config-collapsed") === "true",
+    );
+    element("toggle-config").addEventListener("click", () => {
+        setConfigurationCollapsed(!element("run-form").hidden);
+    });
     element("log-limit").value =
         localStorage.getItem("workbench-log-limit") ?? "20000";
     updateLogLimit();
@@ -240,6 +249,14 @@ async function initialize() {
         state.offset = 0;
         poll();
     });
+    element("request-search-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        applyRequestTaskFilter();
+    });
+    element("clear-request-search").addEventListener("click", () => {
+        element("request-task-name").value = "";
+        applyRequestTaskFilter();
+    });
     element("previous-page").addEventListener("click", () => {
         state.offset = Math.max(0, state.offset - 30);
         poll();
@@ -267,10 +284,21 @@ async function initialize() {
         element("request-detail").innerHTML = "";
     });
     element("pause-log").addEventListener("click", toggleLogFetching);
+    element("maximize-log").addEventListener("click", toggleLogMaximized);
+    element("log-dialog").addEventListener("close", restoreLogWindow);
+    element("log-request-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        applyLogRequestFilter();
+    });
+    element("clear-log-request").addEventListener("click", () => {
+        element("log-request-id").value = "";
+        applyLogRequestFilter();
+    });
     element("log-limit").addEventListener("change", updateLogLimit);
     element("log-filter").addEventListener("input", renderLogs);
     element("copy-log").addEventListener("click", copyLogs);
     try {
+        await generateRunName();
         state.catalog = await api("/dataset");
         state.selectedRun = localStorage.getItem("workbench-run");
         element("dataset-summary").textContent =

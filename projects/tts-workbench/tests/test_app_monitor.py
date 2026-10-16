@@ -9,13 +9,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tts_workbench.app import create_app
-from tts_workbench.config import Settings
+from tts_workbench.config import RunConfig, Settings
 from tts_workbench.monitor import (
     MAX_LOG_BYTES,
     MAX_LOG_LINES,
     optional_number,
     tail_log,
 )
+from tts_workbench.records import RequestRecord, RunRecord
+from tts_workbench.request_logs import download_request_log, tail_request_log
 
 
 def test_authenticated_api_and_static_files(settings: Settings) -> None:
@@ -29,6 +31,9 @@ def test_authenticated_api_and_static_files(settings: Settings) -> None:
         )
         assert client.get("/").status_code == 200
         assert client.get("/api/workbench/dataset").json()["line_count"] == 2
+        assert client.get("/api/workbench/task-name").json() == {
+            "name": "qwen3-tts-1.7b-base-001"
+        }
         assert (
             client.get("/api/workbench/references/unit_0").headers["content-type"]
             == "audio/wav"
@@ -119,6 +124,132 @@ def test_log_line_limit_and_catching_up(tmp_path: Path) -> None:
     assert caught_up.reset
     assert len(caught_up.text.splitlines()) == 50
     assert caught_up.text.endswith("latest\n")
+
+
+def request_record(identity: str, message: str) -> str:
+    """Build the production multiline shape for request-log boundary cases."""
+    return (
+        f"[02:00:47] INFO\n  {identity}\n  sglang_model.py:315\n"
+        f"    方法：Qwen3TTSTalkerDecoderLayer.forward()\n      内容：{message}\n\n"
+    )
+
+
+def test_request_logs_keep_records_and_follow_partial_append(tmp_path: Path) -> None:
+    """Match exact batch members, retain complete records and reread incomplete writes."""
+    path = tmp_path / "server.log"
+    first = request_record("request_id=speech-a", "开始注意力计算，layer_id=12")
+    other = request_record("request_id=speech-a-extra", "mentions speech-a")
+    batch = request_record("request_ids=[speech-b, speech-a]", "合批计算")
+    path.write_text(first + other + batch[:-4])
+    initial = tail_request_log(path, None, "speech-a", 20000)
+    assert initial.text == first
+    with path.open("a") as stream:
+        stream.write(batch[-4:])
+    appended = tail_request_log(path, initial.cursor, "speech-a", 20000)
+    assert appended.text == batch and not appended.reset
+    assert tail_request_log(path, appended.cursor, "speech-a", 20000).text == ""
+    smaller = tail_request_log(path, None, "speech-a", 7)
+    assert smaller.text == batch and smaller.truncated
+    assert b"".join(download_request_log(path, "speech-a")).decode() == first + batch
+    changed_filter = tail_request_log(path, appended.cursor, "speech-a-extra", 20000)
+    assert changed_filter.reset and changed_filter.text == other
+    path.rename(tmp_path / "old.log")
+    path.write_text(first)
+    rotated = tail_request_log(path, appended.cursor, "speech-a", 20000)
+    assert rotated.reset and rotated.text == first
+
+
+def test_request_search_reads_history_outside_latest_byte_window(
+    tmp_path: Path,
+) -> None:
+    """Find an old request even after unrelated logs exceed the normal tail window."""
+    path = tmp_path / "large.log"
+    old = request_record("request_id=speech-old", "historical request")
+    recent = request_record("request_id=http-health", "health check")
+    path.write_text(old + recent * (MAX_LOG_BYTES // len(recent.encode()) + 1))
+    assert "speech-old" not in tail_log(path, None).text
+    found = tail_request_log(path, None, "speech-old", 20000)
+    assert found.text == old
+
+
+def test_request_log_api_and_unlimited_download(settings: Settings) -> None:
+    """Expose complete filtered records and export beyond the chosen display cap."""
+    first = request_record("request_id=speech-a", "first")
+    second = request_record("request_id=speech-a", "second")
+    assert settings.log_file is not None
+    settings.log_file.write_text(first + second)
+    with TestClient(create_app(settings)) as client:
+        response = client.get(
+            "/api/workbench/logs", params={"request_id": "speech-a", "limit": 7}
+        )
+        assert response.status_code == 200
+        assert response.json()["text"] == second
+        assert response.json()["truncated"]
+        download = client.get(
+            "/api/workbench/logs/download", params={"request_id": "speech-a"}
+        )
+        assert download.status_code == 200
+        assert download.text == first + second
+        assert "attachment" in download.headers["content-disposition"]
+
+
+def test_request_search_matches_task_names_with_pagination(settings: Settings) -> None:
+    """Search across tasks, preserve literal wildcard characters and combine failure filtering."""
+    with TestClient(create_app(settings)) as client:
+        store = client.app.state.runtime.store
+        for index, name in enumerate(
+            ("负载_ALPHA_100%", "负载 beta", "other", "负载_ALPHA_100x")
+        ):
+            store.create_run(
+                RunRecord(
+                    id=f"run-{index}",
+                    name=name,
+                    status="completed",
+                    created_at=index,
+                    config=RunConfig(),
+                    line_ids=["unit_0"],
+                    dataset_fingerprint="test",
+                )
+            )
+            for sequence, status in enumerate(("success", "failed")):
+                store.save_request(
+                    RequestRecord(
+                        id=f"request-{index}-{sequence}",
+                        run_id=f"run-{index}",
+                        sequence=sequence,
+                        line_id="unit_0",
+                        speaker="test",
+                        text="test",
+                        reference_text_needs_review=False,
+                        started_at=index * 2 + sequence,
+                        status=status,
+                    )
+                )
+        first = client.get(
+            "/api/workbench/requests", params={"task_name": "负载", "limit": 2}
+        ).json()
+        second = client.get(
+            "/api/workbench/requests",
+            params={"task_name": "负载", "limit": 2, "offset": 2},
+        ).json()
+        assert first["total"] == second["total"] == 6
+        assert {row["id"] for row in first["records"]}.isdisjoint(
+            row["id"] for row in second["records"]
+        )
+        assert all(
+            "负载" in row["run_name"] for row in first["records"] + second["records"]
+        )
+        failures = client.get(
+            "/api/workbench/requests",
+            params={"task_name": "负载", "failures_only": True},
+        ).json()
+        assert failures["total"] == 3
+        assert all(row["status"] == "failed" for row in failures["records"])
+        literal = client.get(
+            "/api/workbench/requests", params={"task_name": "_100%"}
+        ).json()
+        assert literal["total"] == 2
+        assert all(row["run_name"] == "负载_ALPHA_100%" for row in literal["records"])
 
 
 async def test_gpu_na_is_not_zero(

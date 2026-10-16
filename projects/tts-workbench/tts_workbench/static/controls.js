@@ -1,18 +1,32 @@
 /** Configure real workloads using the portable dialogue catalog. */
 "use strict";
 
-/** Fill a fresh editable name using the browser's local time, never during polling. */
-function generateRunName() {
-    const now = new Date();
-    const parts = [
-        now.getMonth() + 1,
-        now.getDate(),
-        now.getHours(),
-        now.getMinutes(),
-        now.getSeconds(),
-    ].map((value) => String(value).padStart(2, "0"));
-    element("run-name").value =
-        `Qwen3-TTS 中→英 ${now.getFullYear()}-${parts[0]}-${parts[1]} ${parts[2]}:${parts[3]}:${parts[4]}`;
+/** Collapse the configuration rail without replacing any edited form values. */
+function setConfigurationCollapsed(collapsed) {
+    element("workspace").classList.toggle("configuration-collapsed", collapsed);
+    element("run-form").hidden = collapsed;
+    const button = element("toggle-config");
+    button.textContent = collapsed ? "展开" : "收起";
+    button.setAttribute("aria-expanded", String(!collapsed));
+    button.setAttribute(
+        "aria-label",
+        collapsed ? "展开配置测试" : "收起配置测试",
+    );
+    localStorage.setItem("workbench-config-collapsed", String(collapsed));
+}
+
+/** Preview the server sequence without overwriting a name edited during the fetch. */
+async function generateRunName() {
+    const previous = element("run-name").value;
+    try {
+        const result = await api("/task-name");
+        if (element("run-name").value === previous) {
+            element("run-name").value = result.name;
+            state.generatedRunName = result.name;
+        }
+    } catch (error) {
+        notify(`自动名称暂未获取，创建时由服务器分配：${error.message}`);
+    }
 }
 
 /** Return source-ordered lines matching the current unit and role filters. */
@@ -139,11 +153,11 @@ async function startRun(event) {
     state.submitting = true;
     updateEstimate();
     try {
-        if (!element("run-name").value.trim()) {
-            generateRunName();
-        }
         const payload = {
-            name: element("run-name").value,
+            name:
+                element("run-name").value === state.generatedRunName
+                    ? ""
+                    : element("run-name").value,
             mode: state.mode,
             unit_ids: [...document.querySelectorAll(".unit-check:checked")].map(
                 (input) => input.value,
@@ -165,7 +179,8 @@ async function startRun(event) {
         state.offset = 0;
         localStorage.setItem("workbench-run", run.id);
         element("notice").hidden = true;
-        generateRunName();
+        element("run-name").value = "";
+        await generateRunName();
         await poll();
     } catch (error) {
         notify(`无法开始测试：${error.message}`);

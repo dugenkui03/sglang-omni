@@ -89,10 +89,7 @@ class Runner:
             created_at = time.time()
             run = RunRecord(
                 id=uuid.uuid4().hex,
-                name=config.name.strip()
-                or "Qwen3-TTS 中→"
-                + ("英 " if config.language == "English" else "中 ")
-                + time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(created_at)),
+                name=config.name.strip(),
                 status="running",
                 created_at=created_at,
                 config=config,
