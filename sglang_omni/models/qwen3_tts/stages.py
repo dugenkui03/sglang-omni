@@ -209,6 +209,7 @@ def create_preprocessing_executor(
     dtype: str = "bfloat16",
     attn_implementation: str | None = None,
 ) -> ThreadedSimpleScheduler[StagePayload, StagePayload]:
+    logger.info("qwen3tts 创建于处理阶段 scheduler，gpu_id %s，预处理函数：preprocess_qwen3_tts_payload", gpu_id)
     if load_frontend:
         load_standalone_preprocessing_context(
             model_path,

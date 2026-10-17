@@ -667,16 +667,8 @@ def run_process(
             #   但是 stage 本身的数据链路还没有搭建、没开始接收上游请求/发送消息给 scheduler
             for stage in stages:
                 await stage.start()
-            log.info(
-                "完成启动 process %s 中的 stages=%s",
-                spec.process_name,
-                [stage.name for stage in stages],
-            )
-            log.info(
-                "Process %s ready with stages=%s",
-                spec.process_name,
-                [stage.name for stage in stages],
-            )
+            log.info("进程中的阶段启动完成\n%s",
+                json.dumps({"process_name": spec.process_name, "stages": [stage.name for stage in stages]}, ensure_ascii=False))
             ready_event.set()
             # NOTE 这里调用了 stage.run()
             tasks = [asyncio.create_task(stage.run()) for stage in stages]

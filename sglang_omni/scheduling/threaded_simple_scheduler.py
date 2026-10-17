@@ -81,6 +81,8 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
     true tensor batching through ``SimpleScheduler(batch_compute_fn=...)``.
 
     Request ids cannot be reused while an earlier lifecycle remains in the pipeline.
+
+    NOTE 先 start() 然后 run()
     """
 
     def __init__(
@@ -128,7 +130,7 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
                 if msg.type != "new_request":
                     continue
                 else:
-                    pass
+                    logger.info("收到新请求：%s", msg.request_id)
                 request_id = msg.request_id
                 with self.lock:
                     try:

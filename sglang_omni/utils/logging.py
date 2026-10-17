@@ -4,14 +4,116 @@ import inspect
 import json
 import logging
 import logging.config
+import math
 import os
 import sys
 import textwrap
+from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
 
+import numpy as np
+import torch
 from huggingface_hub.utils import logging as hf_logging
+from pydantic import BaseModel, JsonValue
+
 from sglang_omni.utils.request_context import current_request_label
+
+
+def summarize_for_log(value: object, *, preview_elements: int = 0) -> JsonValue:
+    """Convert mixed request data to JSON values without dumping array contents."""
+    if isinstance(value, (torch.Tensor, np.ndarray)):
+        summary: dict[str, JsonValue] = {
+            "shape": list(value.shape),
+            "dtype": str(value.dtype),
+            "device": str(value.device) if isinstance(value, torch.Tensor) else "cpu",
+        }
+        if preview_elements <= 0:
+            return summary
+        else:
+            preview_elements = min(preview_elements, 5)
+        if isinstance(value, torch.Tensor):
+            if value.device.type == "cuda":
+                with torch.cuda.device(value.device):
+                    capturing = torch.cuda.is_current_stream_capturing()
+                if capturing:
+                    summary["preview_skipped"] = "cuda_graph_capture"
+                    return summary
+                else:
+                    pass
+            elif value.device.type != "cpu":
+                summary["preview_skipped"] = "device_not_sampled"
+                return summary
+            else:
+                pass
+            if value.is_contiguous():
+                preview = value.detach().view(-1)[:preview_elements]
+            else:
+                coordinates = np.unravel_index(
+                    np.arange(min(preview_elements, value.numel())), value.shape
+                )
+                preview = value.detach()[
+                    tuple(torch.as_tensor(axis, device=value.device) for axis in coordinates)
+                ]
+            sample = preview.cpu().tolist()
+        else:
+            sample = value.flat[:preview_elements].tolist()
+        summary["first5"] = summarize_for_log(sample)
+        return summary
+    elif isinstance(value, np.generic):
+        return summarize_for_log(value.item())
+    elif is_dataclass(value) and not isinstance(value, type):
+        # Field access avoids asdict() deep-copying tensors and runtime handles.
+        return {
+            field.name: summarize_for_log(
+                getattr(value, field.name), preview_elements=preview_elements
+            )
+            for field in fields(value)
+        }
+    elif isinstance(value, BaseModel):
+        return summarize_for_log(dict(value), preview_elements=preview_elements)
+    elif isinstance(value, Mapping):
+        return {
+            str(key): (
+                {"type": "encoded_data", "characters": len(item)}
+                if key == "data" and isinstance(item, str)
+                else summarize_for_log(item, preview_elements=preview_elements)
+            )
+            for key, item in value.items()
+        }
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        return [
+            summarize_for_log(item, preview_elements=preview_elements) for item in value
+        ]
+    elif isinstance(value, (bytes, bytearray, memoryview)):
+        return {"type": type(value).__name__, "bytes": memoryview(value).nbytes}
+    elif isinstance(value, str) and value.startswith("data:") and ";base64," in value:
+        return {
+            "type": "data_uri",
+            "media_type": value[5 : value.index(";")],
+            "characters": len(value),
+        }
+    elif isinstance(value, Enum):
+        return summarize_for_log(value.value)
+    elif isinstance(value, Path):
+        return str(value)
+    elif isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    elif value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    else:
+        return {"type": type(value).__qualname__}
+
+
+def json_for_log(value: object, *, preview_elements: int = 0) -> str:
+    """Serialize one compact JSON line, with array values sampled only on request."""
+    return json.dumps(
+        summarize_for_log(value, preview_elements=preview_elements),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
 
 
 class PollingAccessFilter(logging.Filter):

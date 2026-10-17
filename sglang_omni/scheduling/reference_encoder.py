@@ -13,6 +13,7 @@ import torch
 from typing_extensions import TypeVar
 
 from sglang_omni.scheduling.stage_cache import StageOutputCache
+from sglang_omni.utils.logging import json_for_log
 
 logger = logging.getLogger(__name__)
 InputT = TypeVar("InputT")
@@ -378,11 +379,17 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
 
         # 缓存对应的 key，包括 模型、调用参数等信息
         key = self._hook.cache_key(item)  # noqa: leading-underscore
+        logger.info("参考输入规范化完成，进入缓存或编码链路\n%s",
+            json_for_log({"desc": desc, "item": item, "cache_key": key}))
         if key is None: # 缓存key为null，不是缓存为null
             with self.lock:
                 self.uncacheable += 1
+            logger.info("参考输入不使用缓存，直接编码\n%s", json_for_log({"desc": desc}))
             try:
-                return self.encode_leader(item)
+                artifact = self.encode_leader(item)
+                logger.info("参考编码完成，结果不写入缓存\n%s",
+                    json_for_log({"desc": desc, "artifact": artifact}))
+                return artifact
             except BaseException as exc:
                 self.add_exception_note(exc, desc)
                 with self.lock:
@@ -412,11 +419,15 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
                 leader_fut = concurrent.futures.Future()
                 self.inflight[cache_key] = leader_fut
         if stored is not None:
+            logger.info("参考编码缓存命中，复用已有特征\n%s",
+                json_for_log({"cache_key": key, "artifact": stored}))
             self.maybe_log()
             return self._hook.load_artifact(stored)  # noqa: leading-underscore
         else:
             pass
         if follower_fut is not None:
+            logger.info("相同参考正在编码，等待已有任务\n%s",
+                json_for_log({"cache_key": key, "timeout_seconds": self.timeout_s}))
             try:
                 stored = follower_fut.result(timeout=self.timeout_s)
             except concurrent.futures.TimeoutError as exc:
@@ -425,14 +436,22 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
             except BaseException as exc:
                 self.add_exception_note(exc, desc)
                 raise fresh_exception(exc) from exc
+            logger.info("参考编码等待完成，复用已有结果\n%s",
+                json_for_log({"cache_key": key, "artifact": stored}))
             return self._hook.load_artifact(stored)  # noqa: leading-underscore
         else:
             pass
         assert leader_fut is not None
         try:
+            logger.info("参考编码缓存未命中，开始编码\n%s", json_for_log({"cache_key": key}))
             # NOTE 开始编码，然后通过 encode_one 调用到 Qwen3TTSAdhocReferenceHook.encode_one() 的实现
             artifact = self.encode_leader(item)
+            logger.info("参考编码完成，得到编码产物(Artifact)\n%s",
+                json_for_log({"cache_key": key, "artifact": artifact}))
+
             stored = self._hook.store_artifact(artifact)  # noqa: leading-underscore
+            logger.info("参考编码结果已转换为缓存格式\n%s",
+                json_for_log({"cache_key": key, "stored": stored}))
             should_cache = self._hook.revalidate(item, key)  # noqa: leading-underscore
             with self.lock:
                 if should_cache:
@@ -448,6 +467,8 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
             leader_fut.set_exception(exc)
             raise
         leader_fut.set_result(stored)
+        logger.info("参考编码缓存处理完成\n%s",
+            json_for_log({"cache_key": key, "should_cache": should_cache}))
         self.maybe_log()
         return self._hook.load_artifact(stored)  # noqa: leading-underscore
 
@@ -506,4 +527,4 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
                 "batches": self.batches,
                 "batched_items": self.batched_items,
             }
-        logger.info("%s reference encode stats: %s", self.log_prefix, stats)
+        logger.info("参考编码缓存统计\n%s", json_for_log({"service": self.log_prefix, "stats": stats}))

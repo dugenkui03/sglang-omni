@@ -17,6 +17,7 @@ from sglang_omni.models.qwen3_tts.reference_encoder_cuda_graph import smallest_b
 from sglang_omni.platforms import current_platform
 from sglang_omni.platforms.device_graph import ReplayableGraph
 from sglang_omni.utils.device import device_guard, supports_device_streams
+from sglang_omni.utils.logging import json_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -169,9 +170,12 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
             return_complex=True,
         )
         magnitude = torch.sqrt(torch.view_as_real(spectrum).pow(2).sum(-1) + 1e-9)
-        return torch.log(
+        result = torch.log(
             torch.clamp(torch.matmul(self.mel_basis, magnitude), min=SPEAKER_MEL_CLIP)
         )
+        logger.info("对数梅尔频谱(Log-Mel Spectrogram)计算完成\n%s",
+            json_for_log({"result": result, "time_frame": 0, "first12_mel_bands": result[0, :12, 0].detach().tolist()}))
+        return result
 
     def capture(self, codec_frame_buckets: Iterable[int], codec_hop: int) -> None:
         """One graph per bucket of the reference encoder's ladder, in mel frames;
@@ -264,7 +268,10 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
         if bucket is None:
             self.misses += 1
             # NOTE 普通链路执行
-            return self.encoder(mels.transpose(1, 2))[0]
+            speaker_embedding = self.encoder(mels.transpose(1, 2))[0]
+            logger.info("说话人编码完成，Mel 与音色向量形状对比\n%s",
+                json_for_log({"mel_shape": list(mels.shape), "speaker_embedding_shape": list(speaker_embedding.shape)}))
+            return speaker_embedding
         else:
             pass
         captured = self.graphs[bucket]

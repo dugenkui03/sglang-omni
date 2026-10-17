@@ -18,6 +18,28 @@ from sglang_omni.utils.device import device_guard
 
 logger = logging.getLogger(__name__)
 
+"""
+NOTE 声音编码用到了这个类，用于 cuda graph 加速
+
+Qwen3TTSAdhocReferenceHook.encode_one()                          ← request_builders.py
+    → Qwen3TTSRefCodeBatcher.submit()                            ← request_builders.py
+        → 后台线程 Qwen3TTSRefCodeBatcher.run()                    ← request_builders.py
+            → Qwen3TTSRefCodeBatcher.encode_waveform()            ← request_builders.py
+                │
+                │
+                ├─ CUDA 图可用
+                │    → Qwen3TTSReferenceEncoderCudaGraphRunner.encode() ← 当前文件
+                │        │
+                │        ├─ 选择长度桶、拷贝波形、补零
+                │        ├─ captured.graph.replay()
+                │        └─ 返回 ref_code：[音频帧数, 16]
+                │
+                └─ 没有适用的图
+                     → self.encoder.encode()
+                         → MimiModel.encode()   ← modeling_mimi.py
+
+"""
+
 # note(ratish): a replay costs a floor plus a small per frame term and a key costs
 # 32 MiB, so keys below 32 frames save nothing measurable; the step keeps the padding
 # under half a clip, and clips past 256 frames run eager.

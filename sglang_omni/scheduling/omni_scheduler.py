@@ -103,6 +103,7 @@ from sglang_omni.scheduling.types import (
     SchedulerOutput,
     StreamOutputBuilder,
 )
+from sglang_omni.utils.logging import json_for_log, summarize_for_log
 from sglang_omni.utils.request_context import request_log_context
 
 if TYPE_CHECKING:
@@ -2045,11 +2046,13 @@ class OmniScheduler(Generic[RequestDataT]):
         sched_output = self.build_sched_output(batch)
         logger.info("开始执行模型推理")
         mr_output = self.model_runner.execute(sched_output)
-        result_fields = {"batch_size": len(mr_output.req_ids),
-            "token_shape": list(mr_output.next_token_ids.shape) if mr_output.next_token_ids is not None else None,
-            "token_preview": mr_output.host_token_ids[:4].tolist() if mr_output.host_token_ids is not None else []}
+        result_fields = {
+            "batch_size": len(mr_output.req_ids),
+            "next_token_ids": summarize_for_log(mr_output.next_token_ids),
+            "host_token_ids": summarize_for_log(mr_output.host_token_ids, preview_elements=5),
+        }
         logger.info("推理完成，结果详情\n%s",
-            json.dumps(result_fields, ensure_ascii=False, indent=2))
+            json_for_log(result_fields))
 
         self.emit_prefill_end_for_batch(batch)
         self.emit_stream_output(sched_output, mr_output)

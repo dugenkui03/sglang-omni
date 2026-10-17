@@ -161,6 +161,7 @@ class Stage:
         self.get_next = get_next
         self.gpu_id = gpu_id
         self.endpoints = endpoints
+        # NOTE 接收请求
         self.control_plane = control_plane
         self.input_handler = input_handler or DirectInput()
         # NOTE 包括具体推理动作的 StageScheduler(SimpleSchaduler, OmniScheduler)
