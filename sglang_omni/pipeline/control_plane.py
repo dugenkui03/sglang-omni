@@ -98,11 +98,11 @@ class PushSocket:
             raise RuntimeError("Socket not connected")
         else:
             pass
-        # 序列话发送的消息
+        # 序列化发送的消息
         data = serialize_message(msg)
-        # zmp 发送消息
+        # zmp 发送消息，socket 类型是 zmq.asyncio.Socket
         await self.socket.send(data)
-        logger.debug("PUSH sent %s to %s", type(msg).__name__, self.endpoint)
+        logger.info("请求消息发送成功 / PUSH sent %s to %s", type(msg).__name__, self.endpoint)
 
     def close(self) -> None:
         """Close the socket."""
@@ -294,6 +294,7 @@ class StageControlPlane:
 
     async def start(self) -> None:
         """Initialize all sockets."""
+        # 接收上游 coordinator/stage 消息
         self.recv_socket = PullSocket(self.recv_endpoint, bind=True)
         await self.recv_socket.start()
         self.coordinator_socket = PushSocket(self.coordinator_endpoint)
@@ -415,6 +416,7 @@ class CoordinatorControlPlane:
         self.abort_endpoint = abort_endpoint
         self.completion_socket: PullSocket | None = None
         self.abort_socket: PubSocket | None = None
+        # NOTE 保存 Stage 名称及其对应的 PUSH Socket
         self.stage_sockets: dict[str, PushSocket] = {}
 
     async def start(self) -> None:
@@ -436,12 +438,18 @@ class CoordinatorControlPlane:
     ) -> None:
         """Submit a request to a stage."""
         if stage_name not in self.stage_sockets:
+            logger.info(f"首次向 {stage_name} 发送请求，需要建立通信管道：{stage_endpoint}")
+            # tip 如果 coordinator 还没有跟这个 stage 创建通信管道，则先创建通信管道
             sock = PushSocket(stage_endpoint)
             await sock.connect()
+            # tip 通信管道保存在 stage_sockets 中
             self.stage_sockets[stage_name] = sock
+            logger.info("通信管道创建成功，目前 coordinator 共和%s个stage有 push 类型通信", len(self.stage_sockets))
         else:
             pass
 
+        # 向指定的 stage 发送请求消息
+        logger.info(f"coordinator 向 {stage_name} 发送请求，通信管道{stage_endpoint}")
         await self.stage_sockets[stage_name].send(msg)
 
     async def recv_event(self) -> CompleteMessage | StreamMessage | AdminResultMessage:

@@ -140,8 +140,11 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
                             continue
                         else:
                             pass
+                        logger.info("开始使用 %s 执行请求", getattr(self.fn, "__qualname__", type(self.fn).__name__))
                         future = self.executor.submit(
-                            self.run_one, msg.data, request_id
+                            self.run_one, # NOTE 线程池执行任务的函数
+                            msg.data, # 任务函数的参数
+                            request_id # 任务函数的参数
                         )
                         self.pending[request_id] = future
                     finally:
@@ -241,6 +244,7 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
         with request_log_context(request_id):
             result = self.fn(payload)
             if inspect.isawaitable(result):
+                # 如果 result 是个 协程，比如 async 修饰的函数，则让其执行完成在return
                 result = asyncio.run(result)
             else:
                 pass

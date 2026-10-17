@@ -785,7 +785,7 @@ class MultiProcessPipelineRunner:
                 # Coordinator.run_completion_loop()
                 #     → CoordinatorControlPlane.recv_event()
                 #     → PullSocket.recv()
-                #     → await self.socket.recv()  ← 等待消息到达
+                #     → await self.socket.recv()  ← 消息到达 stage
                 self._coordinator.run_completion_loop()  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
             )
 

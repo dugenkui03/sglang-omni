@@ -1552,7 +1552,7 @@ def register_speech(app: FastAPI) -> None:
     async def create_speech(request: Request) -> Response:
         """Reuse the HTTP identity for validation, model execution and access logs."""
         request_id = request.state.request_id
-        logger.info("Speech request received")
+        logger.info("http 接口收到请求")
         response = await create_speech_response(request, request_id)
         logger.info(f"Speech response ready: HTTP {response.status_code}")
         return response

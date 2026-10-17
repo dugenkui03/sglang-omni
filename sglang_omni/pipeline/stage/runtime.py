@@ -206,6 +206,7 @@ class Stage:
 
         self.running = False
         self.aborted: set[str] = set()
+        # 收到的活跃的请求
         self.active_requests: set[str] = set()
         self.stream_queue: StreamQueue | None = None
         self.stream_chunk_counters: dict[tuple[str, str], int] = {}
@@ -449,6 +450,7 @@ class Stage:
                     continue
                 else:
                     pass
+                logger.info(f" stage 收到上游节点的请求消息")
                 await self.handle_message(msg)
         except asyncio.CancelledError:
             pass
@@ -490,7 +492,7 @@ class Stage:
         """在跨进程接收入口恢复请求日志上下文。"""
         if isinstance(msg, SubmitMessage):
             with request_log_context(msg.request_id):
-                logger.info(f"Stage 收到请求：stage={self.name}")
+                logger.info(f"Stage 收到的请求消息是普通请求类型：stage={self.name}")
                 await self.on_submit(msg)
         elif isinstance(msg, DataAckMessage):
             with request_log_context(msg.request_id):
@@ -586,6 +588,7 @@ class Stage:
         else:
             pass
         self.record_replica_bindings(request_id, msg.replica_bindings)
+        # 将收到的活跃请求放到 self.active_requests 中统一保存
         self.active_requests.add(request_id)
         if self.stream_queue is not None and not self.stream_queue.has(request_id):
             self.stream_queue.open(request_id)
@@ -1147,9 +1150,8 @@ class Stage:
         )
 
     async def execute(self, payload: StagePayload) -> None:
-        """向调度器分发请求时绑定对应的请求 ID。"""
+        """绑定请求日志上下文后，将任务提交给阶段调度器。"""
         with request_log_context(payload.request_id):
-            logger.info(f"Stage 向调度器提交请求：stage={self.name}")
             request_id = payload.request_id
             if request_id in self.aborted:
                 return
@@ -1168,9 +1170,13 @@ class Stage:
                 self.tp_fanout.fanout_work(payload)
             else:
                 pass
+            # 构建新的请求对象
             msg = IncomingMessage(request_id=request_id, type="new_request", data=payload)
             enqueue = getattr(self.scheduler, "enqueue", None)
+            logger.info("将请求消息放进 %s 的 inbox",type(self.scheduler).__name__)
             if enqueue is not None:
+                # tip 如果 scheduler 有自己的 enqueue 方法，则使用该方法
+                #   该方法类似hook可以对消息进行预处理、但是一般最后都有将消息放到 inbox 的逻辑
                 enqueue(msg)
             else:
                 self.scheduler.inbox.put(msg)
@@ -1554,7 +1560,7 @@ class Stage:
         result: object,
     ) -> None:
         """Route a completed result to next stage(s) or complete at coordinator.
-        
+
            NOTE 将结果传递给下一个 Stage 或者这本身就是 最后一个 stage 则将结果给到 Coordinator
         """
         with request_log_context(request_id):

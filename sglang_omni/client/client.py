@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import Mapping
 from contextlib import aclosing
@@ -43,6 +44,8 @@ from sglang_omni.proto.session import (
     TimedChunk,
 )
 
+
+logger = logging.getLogger(__name__)
 
 class EncodeAudioOptions(TypedDict, total=False):
     response_format: str
@@ -187,6 +190,7 @@ class Client:
         # NOTE 这里提交任务到子进程的 stage
         #    client.generate -> coordinator -> coordinator_plane -> coordinator_socket -> stage_socket
         #       -> stage_plane -> stage(仅负责数据交换) -> Scheduler.start() 之后的 loop 读取 scheduler.inbox 数据做处理
+        logger.info("Client 将请求发送给 Coordinator（self.coordinator.submit())")
         result = await self.coordinator.submit(req_id, omni_request)
         yield self.result_builder(req_id, result)
 
@@ -408,6 +412,7 @@ class Client:
         request = replace(request, stream=False, extra_params=extra_params)
 
         # NOTE 发起 TTS 请求
+        logger.info("Client 收到 tts 请求")
         async for chunk in self.generate(request, request_id=request_id):
             if chunk.audio_data is not None:
                 audio_chunks.append(chunk.audio_data)

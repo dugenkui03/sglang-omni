@@ -134,6 +134,7 @@ class Coordinator(CoordinatorSessions):
         self.stages: dict[str, StageInfo] = {}
 
         # Request tracking
+        # NOTE 请求及请求对应的信息：请求执行状态、请求结果
         self.requests: dict[str, RequestInfo] = {}
         self.completion_futures: dict[str, asyncio.Future] = {}
         self.stream_queues: dict[
@@ -412,6 +413,7 @@ class Coordinator(CoordinatorSessions):
         self.reject_session_metadata(request)
         await self.submit_request(request_id, request)
 
+
         future = self.completion_futures[request_id]
         try:
             result = await future
@@ -559,6 +561,19 @@ class Coordinator(CoordinatorSessions):
             # Create future for completion
             loop = asyncio.get_running_loop()
             future: asyncio.Future = loop.create_future()
+            # NOTE 重要，将 req_id 对应的 future 放到 self.completion_futures
+            #       future 的使用大概分三个阶段：
+            #           1. 创建并在 self.completion_futures 给 request_id 占位
+            #           2. 等待，coordinator.submit() 方法会等待这个future执行完成
+            #               future = self.completion_futures[request_id]
+            #               result = await future
+            #               return result
+            #           3. 执行和完成：future 对应的任务交给 satege 执行完成
+            #               提交任务：await self.control_plane.submit_to_stage(...)
+            #               任务完成然后设置结果：
+            #                       future = self.completion_futures[request_id]
+            #                       if not future.done():
+            #                               future.set_result(msg.result)
             self.completion_futures[request_id] = future
             if stream_queue is not None:
                 self.stream_queues[request_id] = stream_queue
@@ -582,6 +597,7 @@ class Coordinator(CoordinatorSessions):
                 # NOTE 这里提交任务到子进程的 stage
                 #    coordinator -> coordinator_plane -> coordinator_socket -> stage_socket
                 #       -> stage_plane -> stage(仅负责数据交换) -> Scheduler.start() 之后的 loop 读取 scheduler.inbox 数据做处理
+                logger.info("通过 coordinator.control_plan 提交任务到 子进程的 stage, entry_info.control_endpoint:%s", entry_info.control_endpoint)
                 await self.control_plane.submit_to_stage(
                     entry_instance,
                     entry_info.control_endpoint,
@@ -606,7 +622,7 @@ class Coordinator(CoordinatorSessions):
             # Update state
             info = self.requests.get(request_id)
             if info is not None:
-                info.state = RequestState.RUNNING
+                info.state = RequestState.RUNNING # tip 将任务更新为正在运行
             else:
                 pass
 
@@ -635,6 +651,7 @@ class Coordinator(CoordinatorSessions):
             pass
         finally:
             if self.completion_futures.get(request_id) is future:
+                # tip 不再需要这个请求对应的任务了，比如请求完成了
                 self.completion_futures.pop(request_id, None)
                 self.stream_queues.pop(request_id, None)
             else:
@@ -792,7 +809,8 @@ class Coordinator(CoordinatorSessions):
                             await self.handle_stream(msg)
                         else:
                             logger.info(
-                                f"Coordinator 收到阶段完成消息：stage={msg.from_stage}, success={msg.success}"
+                                f"Coordinator 收到阶段完成消息：stage={msg.from_stage}, success={msg.success}"+
+                                "此时会将结果放到 future（self.completion_futures[request_id]） 中"
                             )
                             await self.handle_completion(msg)
         except asyncio.CancelledError:
@@ -802,8 +820,17 @@ class Coordinator(CoordinatorSessions):
             raise
 
     async def handle_completion(self, msg: CompleteMessage) -> None:
-        """Handle a completion message from a stage."""
+        """Handle a completion message from a stage.
+            coordinator 收到任务完成的消息，要：
+                1.
+        """
         request_id = msg.request_id
+        logger.info(
+            "Coordinator received completion/coordinator 收到任务完成的消息: req=%s from %s success=%s",
+            request_id,
+            msg.from_stage,
+            msg.success,
+        )
         logger.debug(
             "Coordinator received completion: req=%s from %s success=%s",
             request_id,
@@ -820,9 +847,10 @@ class Coordinator(CoordinatorSessions):
             },
         )
 
+        # 请求信息对象
         info = self.requests.get(request_id)
         if info is None or info.state == RequestState.FAILED:
-            logger.debug(
+            logger.info(
                 "Coordinator ignored completion for inactive req=%s from %s",
                 request_id,
                 msg.from_stage,
@@ -843,6 +871,7 @@ class Coordinator(CoordinatorSessions):
         if not msg.success:
             info.state = RequestState.FAILED
             info.error = msg.error
+            logger.info("任务处理失败，state:%s, 错误信息:%s", info.state, info.error)
             try:
                 await self.control_plane.broadcast_abort(
                     AbortMessage(request_id=request_id)
@@ -856,6 +885,7 @@ class Coordinator(CoordinatorSessions):
                     exc_info=True,
                 )
             else:
+                # 任务成功链路，将 req 信息对象从 requests 中移除
                 self.requests.pop(request_id, None)
             self.partial_results.pop(request_id, None)
             self.reject_completion_future(
@@ -926,8 +956,10 @@ class Coordinator(CoordinatorSessions):
         info.result = merged
 
         if request_id in self.completion_futures:
+            # NOTE 最后，将结果放到 future = self.completion_futures[request_id] 中
             future = self.completion_futures[request_id]
             if not future.done():
+                # 请求 tts 接口的线程 hang 在 从 future 中获取结果的地方，这里将结果放到future中进行放行
                 future.set_result(merged)
             else:
                 pass
