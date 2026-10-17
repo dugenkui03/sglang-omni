@@ -189,6 +189,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
             raise ValueError(f"max_batch_wait_ms must be >= 0, got {max_batch_wait_ms}")
         else:
             pass
+        # Qwen3-TTS 临时参考链路传入 Qwen3TTSAdhocReferenceHook，负责参考输入处理与编码。
         self._hook = hook  # noqa: leading-underscore
         self.cache = StageOutputCache(max_size=max_items, max_bytes=max_bytes)
         self.timeout_s = float(timeout_s)

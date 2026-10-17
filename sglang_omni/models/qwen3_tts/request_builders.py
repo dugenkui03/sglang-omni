@@ -1575,10 +1575,12 @@ def prepare_qwen3_tts_base_request(
         if isinstance(cached_artifact, dict)
         else None
     )
-    logger.info("从缓存恢复 VoicePrompt\n%s",
-        json_for_log({"restored": cached_prompt is not None, "voice_clone_prompt": cached_prompt[0] if cached_prompt is not None else None, "ref_text": cached_prompt[1] if cached_prompt is not None else None}))
     if cached_prompt is not None:
         voice_clone_prompt, ref_text = cached_prompt
+        logger.info(
+            "命中上传音色缓存，恢复 VoicePrompt\n"
+            f"{json_for_log({'voice_clone_prompt': voice_clone_prompt, 'ref_text': ref_text})}"
+        )
     elif cache_key is None:
 
         reference_service = get_qwen3_tts_adhoc_reference_service(model, wrapper)
