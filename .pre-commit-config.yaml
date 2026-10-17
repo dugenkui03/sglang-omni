@@ -25,6 +25,7 @@ repos:
       - id: check-toml
       - id: check-ast
       - id: check-added-large-files
+        exclude: ^docs/备注/(assets/|qwen3/assets/|pdf/).*\.(png|pdf)$
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
         exclude: (?:^\.claude/skills/|^sglang_omni_router/rust/tests/.*\.rs$|^Voxt/(?!backend/|Config/OmniDev\.xcconfig$|Voxt/VoxtOmniDev\.entitlements$|Voxt/Transcription/Omni))
