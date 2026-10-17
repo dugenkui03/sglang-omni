@@ -1318,8 +1318,10 @@ class Qwen3TTSAdhocReferenceHook(
             #  示例（2s音频）
             #       waveform_shape=(48000,), sample_rate_hz=24000
             waveform, sample_rate = normalized[0]
-            logger.info("已获取参考音频波形（Waveform）\n%s",
-                json_for_log({"waveform": waveform, "sample_rate_hz": sample_rate, "duration_seconds": round(len(waveform) / sample_rate, 3)}))
+            logger.info(
+                "已获取参考音频波形（Waveform）\n"
+                f"{json_for_log({'waveform': waveform, 'waveform_first5': waveform[:5].tolist(), 'sample_rate_hz': sample_rate, 'duration_seconds': round(len(waveform) / sample_rate, 3)})}"
+            )
             # note(ratish): the codes are only consumed in ICL mode, so x vector
             # mode runs the speaker encoder alone.
             ref_code_future = None
@@ -1353,8 +1355,10 @@ class Qwen3TTSAdhocReferenceHook(
                 audio=speaker_waveform, # 声音波形
                 sr=speaker_sample_rate, # 采样率
             )
-            logger.info("说话人特征向量(Speaker Embedding)提取完成\n%s",
-                json_for_log({"speaker_waveform": speaker_waveform, "sample_rate_hz": speaker_sample_rate, "speaker_embedding": speaker_embedding}))
+            logger.info(
+                "说话人特征向量(Speaker Embedding)提取完成\n"
+                f"{json_for_log({'speaker_waveform': speaker_waveform, 'sample_rate_hz': speaker_sample_rate, 'speaker_embedding': speaker_embedding, 'speaker_embedding_first5': speaker_embedding.flatten()[:5].tolist()})}"
+            )
             ref_code = (
                 record_ref_code_consumer_stream(ref_code_future.result(timeout=130.0))
                 if ref_code_future is not None
