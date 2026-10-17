@@ -59,6 +59,8 @@ class RunConfig(BaseModel):
     name: str = Field(default="", max_length=100)
     model: str = Field(default="qwen3-tts-1.7b-base", min_length=1, max_length=300)
     mode: Literal["duration", "once", "single"] = "duration"
+    sample_order: Literal["sequential", "random"] = "sequential"
+    repeat_probability: float = Field(default=0.2, ge=0, le=1)
     language: Literal["Chinese", "English"] = "English"
     unit_ids: list[str] = Field(default_factory=list, max_length=100)
     speaker_ids: list[str] = Field(default_factory=list, max_length=1000)

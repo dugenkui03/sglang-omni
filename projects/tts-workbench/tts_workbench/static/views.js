@@ -5,7 +5,7 @@ const DEFAULT_LOG_LINES = 2000;
 const MAX_LOG_LINES = 30000;
 const LOG_LIMIT_STORAGE_KEY = "workbench-log-limit-v2";
 
-/** Render an immutable task snapshot alongside current counters. */
+/** 展示历史任务配置、抽样方式与当前统计，不使用正在编辑的表单值。 */
 function renderDetail(detail) {
     state.detail = detail;
     const statistics = detail?.statistics ?? {},
@@ -25,7 +25,7 @@ function renderDetail(detail) {
     element("run-status").className =
         `badge ${run?.status === "running" ? "running" : run?.status === "failed" ? "error" : "neutral"}`;
     element("run-description").textContent = run
-        ? `${run.config.language === "Chinese" ? "中文原声克隆" : "中文参考 → 英文配音"} · ${run.line_ids.length} 条素材 · ${count(run.config.requests_per_minute)} QPM`
+        ? `${run.config.language === "Chinese" ? "中文原声克隆" : "中文参考 → 英文配音"} · ${run.config.sample_order === "random" ? `乱序请求 · 重复 ${count(run.config.repeat_probability * 100)}%` : "顺序请求"} · ${run.line_ids.length} 条素材 · ${count(run.config.requests_per_minute)} QPM`
         : "准备好素材，开始第一次测试";
     const elapsed = run
         ? (run.ended_at ?? Date.now() / 1000) - run.created_at

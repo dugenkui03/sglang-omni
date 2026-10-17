@@ -81,15 +81,34 @@
                         >
                             <button
                                 type="button"
-                                data-mode="duration"
+                                data-order="sequential"
                                 class="selected"
+                                aria-pressed="true"
                             >
-                                持续请求</button
-                            ><button type="button" data-mode="once">
-                                完整一轮</button
-                            ><button type="button" data-mode="single">
-                                单句试跑
+                                顺序请求</button
+                            ><button type="button" data-order="random" aria-pressed="false">
+                                乱序请求
                             </button>
+                        </div>
+                        <p id="sampling-note" class="form-note">
+                            从所选素材第一句开始，按原顺序循环，直到持续时长结束。
+                        </p>
+                        <div id="random-options" hidden>
+                            <label for="repeat-probability">重复样本概率 <small>%</small></label>
+                            <input
+                                id="repeat-probability"
+                                type="number"
+                                value="20"
+                                min="0"
+                                max="100"
+                                step="any"
+                                required
+                                disabled
+                                aria-describedby="repeat-help"
+                            />
+                            <p id="repeat-help" class="form-note">
+                                按此概率从本任务已选过的样本中抽取，否则抽取未选过的样本。首个样本随机选择；全部选过后允许重复。0% 先遍历全部，100% 会重复首个样本。
+                            </p>
                         </div>
                         <div class="field-title">
                             <label>测试素材</label
@@ -104,19 +123,12 @@
                         <div id="unit-options" class="unit-options">
                             <span class="muted">加载逐句素材…</span>
                         </div>
-                        <select id="speaker" aria-label="筛选角色">
-                            <option value="">全部角色</option>
-                        </select>
                         <div class="selection-meta">
                             <span id="selected-count">— 条台词</span
                             ><span
                                 id="review-count"
                                 class="warning-text"
                             ></span>
-                        </div>
-                        <div id="single-line-field" hidden>
-                            <label for="line">试跑台词</label>
-                            <select id="line"></select>
                         </div>
                         <label for="qpm">请求频率 <small>QPM</small></label
                         ><input

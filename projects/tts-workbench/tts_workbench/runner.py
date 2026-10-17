@@ -15,6 +15,7 @@ import httpx
 from tts_workbench.config import RunConfig, Settings
 from tts_workbench.dataset import Dataset, DialogueLine
 from tts_workbench.records import RequestRecord, RunRecord
+from tts_workbench.sampling import DialogueSampler
 from tts_workbench.speech import (
     create_speech_payload,
     read_audio_duration,
@@ -115,6 +116,7 @@ class Runner:
     async def dispatch(self, active: ActiveRun) -> None:
         """Launch at QPM deadlines without waiting for earlier requests or retrying."""
         config = active.record.config
+        sampler = DialogueSampler(active.lines, config)
         interval_seconds = 60 / config.requests_per_minute
         started_seconds = time.monotonic()
         deadline_seconds = started_seconds + config.duration_seconds
@@ -168,7 +170,7 @@ class Runner:
                 slot += missed
                 skipped += missed
                 next_seconds = started_seconds + slot * interval_seconds
-                line = active.lines[sequence % len(active.lines)]
+                line = sampler.next_line()
                 sequence += 1
                 task = asyncio.create_task(
                     self.request(active, line, sequence, next_seconds)

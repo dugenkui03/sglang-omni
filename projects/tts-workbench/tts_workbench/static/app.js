@@ -4,7 +4,7 @@
 const API = "/api/workbench";
 const state = {
     catalog: null,
-    mode: "duration",
+    sampleOrder: "sequential",
     tab: "overview",
     selectedRun: null,
     activeId: null,
@@ -231,14 +231,15 @@ async function initialize() {
                 selectTab(button.dataset.tab),
             ),
         );
-    document.querySelectorAll("[data-mode]").forEach((button) =>
+    document.querySelectorAll("[data-order]").forEach((button) =>
         button.addEventListener("click", () => {
-            state.mode = button.dataset.mode;
+            state.sampleOrder = button.dataset.order;
             document
-                .querySelectorAll("[data-mode]")
-                .forEach((control) =>
-                    control.classList.toggle("selected", control === button),
-                );
+                .querySelectorAll("[data-order]")
+                .forEach((control) => {
+                    control.classList.toggle("selected", control === button);
+                    control.setAttribute("aria-pressed", String(control === button));
+                });
             updateEstimate();
         }),
     );
@@ -247,8 +248,6 @@ async function initialize() {
     element("clear-run").addEventListener("click", () => clearRuns(false));
     element("clear-all").addEventListener("click", () => clearRuns(true));
     element("refresh-service").addEventListener("click", refreshService);
-    element("speaker").addEventListener("change", updateLines);
-    element("line").addEventListener("change", updateEstimate);
     ["qpm", "duration-preset", "duration-value", "duration-unit"].forEach(
         (identifier) =>
             element(identifier).addEventListener("input", updateEstimate),
@@ -257,7 +256,7 @@ async function initialize() {
         document
             .querySelectorAll(".unit-check")
             .forEach((input) => (input.checked = true));
-        updateSpeakers();
+        updateEstimate();
     });
     element("history").addEventListener("change", () => {
         state.selectedRun = element("history").value;
@@ -372,9 +371,9 @@ async function initialize() {
         document
             .querySelectorAll(".unit-check")
             .forEach((input) =>
-                input.addEventListener("change", updateSpeakers),
+                input.addEventListener("change", updateEstimate),
             );
-        updateSpeakers();
+        updateEstimate();
         await poll();
     } catch (error) {
         notify(`初始化失败：${error.message}`);

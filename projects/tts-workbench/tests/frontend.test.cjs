@@ -111,6 +111,47 @@ test("automatic names stay previews while edits survive a pending name fetch", a
     assert.equal(state.generatedRunName, "model-002");
 });
 
+test("两种抽样方式均保留时长，表单按百分比提交且包含全部角色", async () => {
+    const { state, element, context } = harness();
+    state.catalog = { lines: [
+        { line_id: "a", unit_id: "chosen", speaker_id: "one" },
+        { line_id: "b", unit_id: "chosen", speaker_id: "two" },
+        { line_id: "c", unit_id: "other", speaker_id: "three" },
+    ] };
+    context.document.querySelectorAll = () => [{ value: "chosen" }];
+    element("qpm").value = "10";
+    element("duration-preset").value = "600";
+    element("timeout").value = "120";
+    element("repeat-probability").value = "35";
+    state.sampleOrder = "sequential";
+    context.updateEstimate();
+    assert.equal(element("random-options").hidden, true);
+    assert.equal(element("repeat-probability").disabled, true);
+    assert.equal(element("selected-count").textContent, "2 条台词");
+    assert.match(element("estimate").textContent, /100 次请求/);
+    state.sampleOrder = "random";
+    context.updateEstimate();
+    assert.equal(element("random-options").hidden, false);
+    assert.equal(element("repeat-probability").disabled, false);
+    assert.match(element("sampling-note").textContent, /允许重复/);
+    let submitted;
+    context.api = async (path, options) => {
+        if (path === "/runs") {
+            submitted = JSON.parse(options.body);
+            return { id: "new-task" };
+        }
+        return { name: "model-002" };
+    };
+    await context.startRun({ preventDefault() {} });
+    assert.equal(submitted.mode, "duration");
+    assert.equal(submitted.sample_order, "random");
+    assert.equal(submitted.repeat_probability, 0.35);
+    assert.equal(submitted.duration_seconds, 600);
+    assert.deepEqual(submitted.unit_ids, ["chosen"]);
+    assert.equal("speaker_ids" in submitted, false);
+    assert.equal("line_ids" in submitted, false);
+});
+
 
 test("search combines all filters and renders collapsed escaped records without scrolling", async () => {
     const {state, element, context} = harness();
