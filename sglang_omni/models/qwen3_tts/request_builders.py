@@ -1153,7 +1153,10 @@ class Qwen3TTSRefCodeBatcher:
             num_quantizers=self.num_quantizers,  # 一帧音频的 codebook 数量，目前是 16
             return_dict=True
         ).audio_codes
-        logger.info(f"参考音频编码完成\n{json_for_log(codes)}")
+        logger.info(
+            f"参考音频编码完成\n{json_for_log(codes)}\n"
+            f"第一个时间帧的 codebook 编号（帧索引 0）：{codes[0, :16, :1].flatten().tolist()}"
+        )
 
         # 返回 [音频帧数， 16] 形状的结果
         #
