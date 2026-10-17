@@ -744,6 +744,10 @@ class MultiProcessPipelineRunner:
                 if self.config.terminal_stages_fn
                 else None
             )
+
+            # 简而言之就是如下两个值相加
+            #   max_running_requests: 1
+            #   max_queued_requests: 2
             max_in_flight = resolve_coordinator_max_in_flight(
                 self.config,
                 logical_process_plan=prep.logical_process_plan,
@@ -858,7 +862,7 @@ class MultiProcessPipelineRunner:
             else:
                 pass
 
-            
+
             for group in self.groups:
                 logger.info("将stage注册到 coordinator 中，仅仅是保存stage name元数据到 coordinator中 \n%s",
                     json.dumps({"group_name": group.group_name, "stage_names": list(group.stage_control_endpoints)}, ensure_ascii=False, indent=2))

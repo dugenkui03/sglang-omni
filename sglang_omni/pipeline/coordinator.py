@@ -483,7 +483,7 @@ class Coordinator(CoordinatorSessions):
         should_bypass_admission: bool = False,
     ) -> None:
         """Submit a request without waiting for completion.
-       
+
         NOTE 普通链路，讲请求提交到 子进程 stage 处理
         """
         if self.fatal_error is not None:
@@ -506,7 +506,7 @@ class Coordinator(CoordinatorSessions):
         if (
             not should_bypass_admission
             and self.max_in_flight is not None
-            and len(self.requests) >= self.max_in_flight
+            and len(self.requests) >= self.max_in_flight # 目前已经执行的请求达到了阈值
         ):
             logger.warning(
                 "Rejecting request %s before pipeline submit: in-flight cap "
@@ -577,6 +577,9 @@ class Coordinator(CoordinatorSessions):
         )
 
         try:
+            # NOTE 这里提交任务到子进程的 stage
+            #    coordinator -> coordinator_plane -> coordinator_socket -> stage_socket
+            #       -> stage_plane -> stage(仅负责数据交换) -> Scheduler.start() 之后的 loop 读取 scheduler.inbox 数据做处理
             await self.control_plane.submit_to_stage(
                 entry_instance,
                 entry_info.control_endpoint,

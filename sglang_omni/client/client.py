@@ -108,12 +108,12 @@ class StreamedStopTrimmer:
 
 class Client:
     """Internal client used by API adapters.
-    
+
     NOTE 请求数据流如下，client 相当于 HTTP API 和 Coordinator 的一个中间层
         HTTP API -> Client -> Coordinator -> Stages(sub process)
 
     核心方法：
-    
+
     """
 
     def __init__(
@@ -183,7 +183,10 @@ class Client:
         else:
             pass
 
-        # NOTE 普通链路请求 -> 提交给 Coordinator
+
+        # NOTE 这里提交任务到子进程的 stage
+        #    client.generate -> coordinator -> coordinator_plane -> coordinator_socket -> stage_socket
+        #       -> stage_plane -> stage(仅负责数据交换) -> Scheduler.start() 之后的 loop 读取 scheduler.inbox 数据做处理
         result = await self.coordinator.submit(req_id, omni_request)
         yield self.result_builder(req_id, result)
 
