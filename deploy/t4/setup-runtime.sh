@@ -30,5 +30,5 @@ install -D /root/.local/bin/uv "$runtime_root/usr/local/bin/uv"
 install -D /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 "$runtime_root/opt/nvidia/lib/libnvidia-ml.so.1"
 chroot "$runtime_root" /usr/bin/env DEBIAN_FRONTEND=noninteractive /bin/bash -eu -c '
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates python3 python3-venv python3-dev build-essential git curl sox ffmpeg libsndfile1 libnuma1 libibverbs1 librdmacm1 libgl1 libglib2.0-0t64
+apt-get install -y --no-install-recommends ca-certificates python3 python3-venv python3-dev build-essential git curl sox ffmpeg libsndfile1 libnuma1 libibverbs1 ibverbs-providers librdmacm1 libgl1 libglib2.0-0t64
 '
