@@ -5,6 +5,7 @@ import base64
 import binascii
 import fcntl
 import logging
+import re
 import secrets
 import sqlite3
 from collections.abc import AsyncIterator
@@ -23,6 +24,7 @@ from pydantic import BaseModel
 from tts_workbench.config import RunConfig, Settings
 from tts_workbench.dataset import DataCatalog, Dataset
 from tts_workbench.monitor import (
+    DEFAULT_LOG_LINES,
     MAX_LOG_LINES,
     GpuMonitor,
     GpuView,
@@ -407,7 +409,7 @@ def create_app(settings: Settings) -> FastAPI:
     async def logs(
         request: Request,
         cursor: str | None = Query(None, max_length=160),
-        limit: int = Query(MAX_LOG_LINES, ge=1, le=MAX_LOG_LINES),
+        limit: int = Query(DEFAULT_LOG_LINES, ge=1, le=MAX_LOG_LINES),
         request_id: str | None = Query(None, min_length=1, max_length=200),
         scope: Literal["all", "system", "inference"] = "all",
         keyword: str = Query("", max_length=200),
@@ -423,10 +425,11 @@ def create_app(settings: Settings) -> FastAPI:
         request_id: str = Query(min_length=1, max_length=200),
     ) -> StreamingResponse:
         """Export all archived matching records, including logs from before file rotation."""
+        filename = re.sub(r"[^A-Za-z0-9_.-]", "_", request_id)
         return StreamingResponse(
             runtime_from(request).logs.download(request_id),
             media_type="text/plain; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="request-logs.txt"'},
+            headers={"Content-Disposition": f'attachment; filename="{filename}.log"'},
         )
 
     app.mount("/static", StaticFiles(directory=STATIC_DIRECTORY), name="static")

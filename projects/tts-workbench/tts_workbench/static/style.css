@@ -1086,6 +1086,9 @@ body:has(#log-dialog[open]) {
     gap: 8px 12px;
     white-space: nowrap;
 }
+.request-actions a {
+    text-decoration: none;
+}
 .result-player {
     padding: 14px 20px;
     background: #f4f7ff;

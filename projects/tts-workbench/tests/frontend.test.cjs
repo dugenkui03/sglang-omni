@@ -9,7 +9,7 @@ const vm = require("node:vm");
 function harness() {
     const nodes = new Map();
     const state = {
-        logLineLimit: 20000,
+        logLineLimit: 2000,
         logText: "",
         logsPaused: false,
         logController: null,
@@ -93,19 +93,29 @@ test("pause stops new log fetches and ignores an already pending response", asyn
     assert.equal(state.logCursor, null);
 });
 
-test("log window counts exactly 20000 rows and can be reduced while paused", () => {
+test("log window defaults to 2000 rows and supports up to 30000 while paused", () => {
     const { state, element, context } = harness();
     state.logText = Array.from(
-        { length: 25000 },
+        { length: 35000 },
         (_, index) => `row ${index}\n`,
     ).join("");
     context.trimLogWindow();
-    assert.equal(state.logText.split("\n").length - 1, 20000);
+    assert.equal(state.logText.split("\n").length - 1, 2000);
     state.logsPaused = true;
+    element("log-limit").value = "40000";
+    context.updateLogLimit();
+    assert.equal(state.logLineLimit, 30000);
+    state.logText = Array.from(
+        { length: 35000 },
+        (_, index) => `row ${index}\n`,
+    ).join("");
+    context.trimLogWindow();
+    assert.equal(state.logText.split("\n").length - 1, 30000);
+    assert.match(state.logText, /^row 5000\n/);
     element("log-limit").value = "12";
     context.updateLogLimit();
     assert.equal(state.logText.split("\n").length - 1, 12);
-    assert.match(state.logText, /^row 24988\n/);
+    assert.match(state.logText, /^row 34988\n/);
 });
 
 test("listen plays the result immediately without opening details", () => {
@@ -157,14 +167,14 @@ test("changing request filter while paused never fetches and aborts stale respon
         calls += 1;
     };
     element("log-request-id").value = " speech-a ";
+    context.updateLogDownload();
+    assert.equal(element("download-request-log").disabled, false);
+    assert.equal(calls, 0);
     context.applyLogRequestFilter();
     assert.equal(state.logRequestId, "speech-a");
     assert.equal(state.logController.signal.aborted, true);
     assert.equal(calls, 0);
-    assert.equal(
-        element("download-request-log").href,
-        "/api/workbench/logs/download?request_id=speech-a",
-    );
+    assert.equal(element("download-request-log").disabled, false);
 });
 
 test("automatic names stay previews while edits survive a pending name fetch", async () => {

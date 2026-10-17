@@ -1,6 +1,10 @@
 /** Render observations from durable workbench records. */
 "use strict";
 
+const DEFAULT_LOG_LINES = 2000;
+const MAX_LOG_LINES = 30000;
+const LOG_LIMIT_STORAGE_KEY = "workbench-log-limit-v2";
+
 /** Render an immutable task snapshot alongside current counters. */
 function renderDetail(detail) {
     state.detail = detail;
@@ -162,7 +166,7 @@ function renderRows() {
         ? state.rows
               .map(
                   (record) =>
-                      `<tr><td>#${record.sequence}<small>${shortTime(record.started_at)}</small></td><td><button class="row-text ellipsis" data-request="${record.id}" title="${escapeText(record.text)}">${escapeText(record.text)}</button><small>${escapeText(record.speaker)} · ${escapeText(record.line_id)}${record.reference_text_needs_review ? " · 参考待复核" : ""}</small>${record.run_name ? `<small>任务：${escapeText(record.run_name)}</small>` : ""}</td><td><span class="badge ${record.status === "success" ? "" : record.status === "inflight" ? "neutral" : "error"}">${statusLabels[record.status]}</span></td><td>${latency(record.latency_ms)}</td><td><div class="request-actions">${record.audio_path ? `<button class="text-button" data-play="${record.id}">▶ 试听</button>` : ""}<button class="text-button" data-request="${record.id}">详情</button></div></td></tr>`,
+                      `<tr><td>#${record.sequence}<small>${shortTime(record.started_at)}</small></td><td><button class="row-text ellipsis" data-request="${record.id}" title="${escapeText(record.text)}">${escapeText(record.text)}</button><small>${escapeText(record.speaker)} · ${escapeText(record.line_id)}${record.reference_text_needs_review ? " · 参考待复核" : ""}</small>${record.run_name ? `<small>任务：${escapeText(record.run_name)}</small>` : ""}</td><td><span class="badge ${record.status === "success" ? "" : record.status === "inflight" ? "neutral" : "error"}">${statusLabels[record.status]}</span></td><td>${latency(record.latency_ms)}</td><td><div class="request-actions">${record.audio_path ? `<button class="text-button" data-play="${record.id}">▶ 试听</button>` : ""}<button class="text-button" data-request="${record.id}">详情</button>${record.service_request_id ? `<a class="text-button" href="${API}/logs/download?${new URLSearchParams({ request_id: record.service_request_id })}" download title="${escapeText(record.service_request_id)}">下载日志</a>` : `<button class="text-button" disabled title="服务未返回 request_id，暂无法关联日志">下载日志</button>`}</div></td></tr>`,
               )
               .join("")
         : '<tr><td colspan="5" class="table-empty">暂无符合条件的请求记录。</td></tr>';
@@ -372,14 +376,18 @@ function applyLogRequestFilter(clearKeyword = true) {
         element("log-filter").value = "";
     }
     state.logKeyword = element("log-filter").value.trim();
-    const download = element("download-request-log");
-    download.hidden = !state.logRequestId;
-    download.href = `${API}/logs/download?${new URLSearchParams({ request_id: state.logRequestId })}`;
+    updateLogDownload();
     trimLogWindow();
     renderLogs();
     if (!state.logsPaused) {
         poll();
     }
+}
+
+/** Enable a native full-history download without requiring an applied filter. */
+function updateLogDownload() {
+    element("download-request-log").disabled = !element("log-request-id")
+        .value.trim();
 }
 
 /** Stop log network requests immediately, including an unfinished response. */
@@ -409,12 +417,12 @@ function updateLogLimit() {
     state.logLineLimit = Math.max(
         1,
         Math.min(
-            20000,
-            Math.floor(Number(element("log-limit").value)) || 20000,
+            MAX_LOG_LINES,
+            Math.floor(Number(element("log-limit").value)) || DEFAULT_LOG_LINES,
         ),
     );
     element("log-limit").value = state.logLineLimit;
-    localStorage.setItem("workbench-log-limit", String(state.logLineLimit));
+    localStorage.setItem(LOG_LIMIT_STORAGE_KEY, String(state.logLineLimit));
     if (state.logLineLimit !== previous) {
         state.logController?.abort();
     }

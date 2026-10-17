@@ -20,7 +20,8 @@ from tts_workbench.storage import Store
 logger = logging.getLogger(__name__)
 GPU_INTERVAL_SECONDS = 2
 MAX_LOG_BYTES = 8 * 1024 * 1024
-MAX_LOG_LINES = 20000
+DEFAULT_LOG_LINES = 2000
+MAX_LOG_LINES = 30000
 
 
 class GpuState(BaseModel):
@@ -238,7 +239,7 @@ class GpuMonitor:
 
 
 def tail_log(
-    path: Path | None, cursor: str | None, limit: int = MAX_LOG_LINES
+    path: Path | None, cursor: str | None, limit: int = DEFAULT_LOG_LINES
 ) -> LogTail:
     """Follow only the configured file and handle rotation or truncate/regrow."""
     if path is None:

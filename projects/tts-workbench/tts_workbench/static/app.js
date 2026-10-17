@@ -18,7 +18,7 @@ const state = {
     logText: "",
     logsPaused: false,
     logController: null,
-    logLineLimit: 20000,
+    logLineLimit: DEFAULT_LOG_LINES,
     logRequestId: "",
     logScope: "all",
     logKeyword: "",
@@ -224,8 +224,9 @@ async function initialize() {
         setConfigurationCollapsed(!element("run-form").hidden);
     });
     element("log-limit").value =
-        localStorage.getItem("workbench-log-limit") ?? "20000";
+        localStorage.getItem(LOG_LIMIT_STORAGE_KEY) ?? String(DEFAULT_LOG_LINES);
     updateLogLimit();
+    updateLogDownload();
     document
         .querySelectorAll("[data-tab]")
         .forEach((button) =>
@@ -315,12 +316,18 @@ async function initialize() {
     element("maximize-log").addEventListener("click", toggleLogMaximized);
     element("log-dialog").addEventListener("close", restoreLogWindow);
     element("log-request-form").addEventListener("submit", (event) => {
+        if (event.submitter?.id === "download-request-log") {
+            element("log-request-id").value = element("log-request-id")
+                .value.trim();
+            return;
+        }
         event.preventDefault();
         if (element("log-request-id").value.trim()) {
             element("log-scope").value = "all";
         }
         applyLogRequestFilter();
     });
+    element("log-request-id").addEventListener("input", updateLogDownload);
     element("log-scope").addEventListener("change", () => {
         element("log-request-id").value = "";
         applyLogRequestFilter();

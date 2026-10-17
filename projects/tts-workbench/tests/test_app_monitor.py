@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from tts_workbench.app import create_app
 from tts_workbench.config import RunConfig, Settings
 from tts_workbench.monitor import (
+    DEFAULT_LOG_LINES,
     MAX_LOG_BYTES,
     MAX_LOG_LINES,
     optional_number,
@@ -111,15 +112,18 @@ def test_log_multibyte_read_boundary(tmp_path: Path) -> None:
 
 
 def test_log_line_limit_and_catching_up(tmp_path: Path) -> None:
-    """Read the latest 20k lines and discard a stale backlog beyond the byte window."""
+    """Respect default and maximum windows while discarding stale byte backlogs."""
     path = tmp_path / "large.log"
-    path.write_text("".join(f"line {index}\n" for index in range(25000)))
+    path.write_text("".join(f"line {index}\n" for index in range(35000)))
     first = tail_log(path, None)
-    assert len(first.text.splitlines()) == MAX_LOG_LINES
-    assert first.text.startswith("line 5000\n")
+    assert len(first.text.splitlines()) == DEFAULT_LOG_LINES
+    assert first.text.startswith("line 33000\n")
+    maximum = tail_log(path, None, MAX_LOG_LINES)
+    assert len(maximum.text.splitlines()) == MAX_LOG_LINES
+    assert maximum.text.startswith("line 5000\n")
     smaller = tail_log(path, None, 100)
     assert len(smaller.text.splitlines()) == 100
-    assert smaller.text.startswith("line 24900\n")
+    assert smaller.text.startswith("line 34900\n")
     with path.open("a") as stream:
         stream.write("new\n" * (MAX_LOG_BYTES // 2 + 2))
         stream.write("latest\n")
@@ -238,6 +242,7 @@ def test_request_log_api_and_unlimited_download(settings: Settings) -> None:
         assert download.status_code == 200
         assert download.text == first + second
         assert "attachment" in download.headers["content-disposition"]
+        assert 'filename="speech-a.log"' in download.headers["content-disposition"]
         client.delete(
             "/api/workbench/runs/completed", headers={"X-Workbench-Client": "1"}
         )
@@ -247,6 +252,29 @@ def test_request_log_api_and_unlimited_download(settings: Settings) -> None:
             ).text
             == first + second
         )
+
+
+def test_log_api_default_maximum_and_complete_download(settings: Settings) -> None:
+    """Bound rendered windows while exporting a request larger than the maximum."""
+    record = request_record("request_id=speech-a", "attention")
+    history = record * 5001
+    assert settings.log_file is not None
+    settings.log_file.write_text(history)
+    with TestClient(create_app(settings)) as client:
+        default = client.get("/api/workbench/logs").json()
+        assert 1900 < len(default["text"].splitlines()) <= DEFAULT_LOG_LINES
+        assert default["matched_lines"] == 30006
+        maximum = client.get("/api/workbench/logs", params={"limit": 30000})
+        assert maximum.status_code == 200
+        assert len(maximum.json()["text"].splitlines()) == MAX_LOG_LINES
+        assert (
+            client.get("/api/workbench/logs", params={"limit": 30001}).status_code
+            == 422
+        )
+        download = client.get(
+            "/api/workbench/logs/download", params={"request_id": "speech-a"}
+        )
+        assert download.text == history
 
 
 def test_request_search_matches_task_names_with_pagination(settings: Settings) -> None:

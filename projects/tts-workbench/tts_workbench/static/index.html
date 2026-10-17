@@ -378,7 +378,7 @@
                                         <th>台词 / 角色</th>
                                         <th>结果</th>
                                         <th>时延</th>
-                                        <th>音频 / 详情</th>
+                                        <th>音频 / 详情 / 日志</th>
                                     </tr>
                                 </thead>
                                 <tbody id="request-rows">
@@ -491,6 +491,7 @@
                                 <label for="log-request-id">请求 ID</label>
                                 <input
                                     id="log-request-id"
+                                    name="request_id"
                                     placeholder="输入完整 request_id，查询全部历史日志"
                                     maxlength="200"
                                     autocomplete="off"
@@ -505,11 +506,14 @@
                                 >
                                     清除
                                 </button>
-                                <a
+                                <button
                                     id="download-request-log"
-                                    class="text-button"
-                                    hidden
-                                    >下载该请求全部日志</a
+                                    type="submit"
+                                    class="button quiet"
+                                    formaction="/api/workbench/logs/download"
+                                    formmethod="get"
+                                    disabled
+                                    >下载该请求全部日志</button
                                 >
                             </form>
                             <div class="log-tools">
@@ -521,9 +525,9 @@
                                         id="log-limit"
                                         type="number"
                                         min="1"
-                                        max="20000"
+                                        max="30000"
                                         step="1"
-                                        value="20000"
+                                        value="2000"
                                     />
                                 </label>
                                 <input
@@ -542,7 +546,7 @@
                             >
                             <div class="log-footnote">
                                 <span id="log-window-count"
-                                    >保留最近 20,000 行，最多 20,000 行。</span
+                                    >默认显示最近 2,000 行，最多 30,000 行。</span
                                 >
                                 SQLite
                                 保存完整日志；原始文件和日志归档不受清理测试结果影响。
