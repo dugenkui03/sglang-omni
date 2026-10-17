@@ -14,7 +14,7 @@ mkdir -p "$operations_root" "$runtime_root"
 if ! test -f "$runtime_root/etc/os-release"; then
     curl --fail --location --retry 3 "$ubuntu_source/$ubuntu_archive" -o "$operations_root/$ubuntu_archive"
     curl --fail --location --retry 3 "$ubuntu_source/SHA256SUMS" -o "$operations_root/ubuntu-SHA256SUMS"
-    (cd "$operations_root" && grep " $ubuntu_archive\$" ubuntu-SHA256SUMS | sha256sum --check -)
+    (cd "$operations_root" && grep "[ *]$ubuntu_archive\$" ubuntu-SHA256SUMS | sha256sum --check -)
     tar --extract --gzip --file "$operations_root/$ubuntu_archive" --directory "$runtime_root"
 fi
 

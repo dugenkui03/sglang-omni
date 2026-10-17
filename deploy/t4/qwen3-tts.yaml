@@ -1,0 +1,35 @@
+# T4 uses FP16 and eager execution for the first voice-cloning validation.
+config_cls: Qwen3TTSPipelineConfig
+model_path: /root/data/sglang-omni/models/Qwen3-TTS-12Hz-1.7B-Base
+stages:
+  preprocessing:
+    factory:
+      max_concurrency: 1
+  tts_engine:
+    factory:
+      dtype: float16
+      attn_implementation: sdpa
+    engine:
+      attention_backend: triton
+      sampling_backend: pytorch
+      disable_cuda_graph: true
+      cuda_graph_backend_prefill: disabled
+      enable_torch_compile: false
+      mem_fraction_static: 0.65
+      max_running_requests: 1
+      max_queued_requests: 2
+      max_total_tokens: 8192
+  vocoder:
+    factory:
+      dtype: float16
+      attn_implementation: sdpa
+      max_batch_size: 1
+      initial_max_batch_size: 1
+      followup_max_batch_size: 1
+      initial_cuda_graph: false
+      followup_cuda_graph: false
+      async_decode: false
+      fused_snake_activation: false
+      enable_stateful_codec_decoder: false
+      incremental_codec_cuda_graph: false
+      incremental_codec_compile: false
