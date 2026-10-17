@@ -1,0 +1,4 @@
+# CUDA 13-only optional fused kernels are not used by the T4 eager path.
+sgl-deep-ep
+sgl-deep-gemm
+tokenspeed-mla
