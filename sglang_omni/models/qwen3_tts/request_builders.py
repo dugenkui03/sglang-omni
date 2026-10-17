@@ -1603,13 +1603,20 @@ def prepare_qwen3_tts_base_request(
     input_id = wrapper._tokenize_texts([wrapper._build_assistant_text(state.text)])[
         0
     ]  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
-    ref_id = (
-        # NOTE 这里是对文本的 token 化
-        wrapper._tokenize_texts([wrapper._build_ref_text(ref_text)])[
-            0
-        ]  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+    reference_text_input = (
+        wrapper._build_ref_text(ref_text)  # noqa: leading-underscore  # 上游方法名
         if ref_text
         else None
+    )
+    ref_id = (
+        # NOTE 这里是对文本的 token 化
+        wrapper._tokenize_texts([reference_text_input])[0]  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+        if ref_text
+        else None
+    )
+    logger.info(
+        f"参考文本 token 化完成，tokenizer_input={reference_text_input!r}，"
+        f"ref_id.shape={tuple(ref_id.shape) if ref_id is not None else None}"
     )
     instruct_id = build_instruct_id(wrapper, state.instructions)
     with torch.no_grad():
