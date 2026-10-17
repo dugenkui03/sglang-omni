@@ -1318,7 +1318,7 @@ class Qwen3TTSAdhocReferenceHook(
             #  示例（2s音频）
             #       waveform_shape=(48000,), sample_rate_hz=24000
             waveform, sample_rate = normalized[0]
-            logger.info("参考音频解码完成，得到波形(Waveform)\n%s",
+            logger.info("已获取参考音频波形（Waveform）\n%s",
                 json_for_log({"waveform": waveform, "sample_rate_hz": sample_rate, "duration_seconds": round(len(waveform) / sample_rate, 3)}))
             # note(ratish): the codes are only consumed in ICL mode, so x vector
             # mode runs the speaker encoder alone.
