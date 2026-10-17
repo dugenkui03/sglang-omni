@@ -2063,6 +2063,7 @@ def apply_sglang_qwen3_tts_result(
     payload: StagePayload,
     data: Qwen3TTSSGLangRequestData,
 ) -> StagePayload:
+    """整理有效音频帧，并为每个请求记录一次推理结束摘要。"""
     code_parts: list[torch.Tensor] = []
     if data.ref_code is not None and data.ref_code_len:
         code_parts.append(data.ref_code.to(dtype=torch.long))
@@ -2083,7 +2084,7 @@ def apply_sglang_qwen3_tts_result(
     else:
         codes = torch.empty((0, 0), dtype=torch.long)
 
-    return StagePayload(
+    result = StagePayload(
         request_id=payload.request_id,
         request=payload.request,
         data={
@@ -2096,6 +2097,13 @@ def apply_sglang_qwen3_tts_result(
             "finish_reason": qwen3_tts_finish_reason(data),
         },
     )
+    with request_log_context(payload.request_id):
+        logger.info(
+            f"自回归推理结束：finish_reason={result.data['finish_reason']}, "
+            f"output_tokens={len(data.output_ids)}, audio_frames={len(data.output_codes)}, "
+            f"engine_time_seconds={result.data['engine_time_s']:.3f}"
+        )
+    return result
 
 
 def make_qwen3_tts_scheduler_adapters(

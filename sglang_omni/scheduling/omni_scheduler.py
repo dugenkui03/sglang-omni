@@ -104,7 +104,11 @@ from sglang_omni.scheduling.types import (
     StreamOutputBuilder,
 )
 from sglang_omni.utils.logging import json_for_log, summarize_for_log
-from sglang_omni.utils.request_context import request_log_context
+from sglang_omni.utils.request_context import (
+    inference_log_context,
+    request_log_context,
+    should_log_inference_details,
+)
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.mlx.tp_worker import MlxTpModelWorker
@@ -1898,8 +1902,13 @@ class OmniScheduler(Generic[RequestDataT]):
         # NOTE 就是 sglang 的 Scheduler
         #   import Scheduler as _Upstream
         plan = _Upstream.get_next_batch_to_run(self, running_batch, self.last_batch)
-        if plan.batch_to_run is not None:
-            with request_log_context(*(request.rid for request in plan.batch_to_run.reqs)):
+        if plan.batch_to_run is not None and any(
+            request.rid not in self.prefill_start_done
+            for request in plan.batch_to_run.reqs
+        ):
+            with request_log_context(
+                *(request.rid for request in plan.batch_to_run.reqs)
+            ):
                 logger.info(
                     f"组批完成：batch_size={len(plan.batch_to_run.reqs)}, "
                     f"running_size={len(plan.running_batch.reqs)}, waiting_size={len(self.waiting_queue)}"
@@ -1987,8 +1996,13 @@ class OmniScheduler(Generic[RequestDataT]):
         return NextBatchPlan(batch_to_run=None, running_batch=running_batch)
 
     def run_batch(self, batch, pp_proxy_tensors=None):
-        """Attribute nested model logs to every request participating in this batch."""
-        with request_log_context(*(req.rid for req in batch.reqs)):
+        """绑定批内请求 ID，仅在包含首轮请求时输出模型计算细节。"""
+        with (
+            request_log_context(*(req.rid for req in batch.reqs)),
+            inference_log_context(
+                any(req.rid not in self.prefill_start_done for req in batch.reqs)
+            ),
+        ):
             try:
                 return self._run_batch(batch, pp_proxy_tensors)
             except Exception as exc:
@@ -2037,28 +2051,31 @@ class OmniScheduler(Generic[RequestDataT]):
             pass
 
     def _run_batch(self, batch, pp_proxy_tensors=None):
-        """Run a batch through the model runner.
-
-        The custom model runner (for example ThinkerModelRunner or a
-        model-specific talker runner)
-        accepts a ``SchedulerOutput`` wrapper and returns a
-        ``ModelRunnerOutput``.  The upstream ``process_batch_result`` expects
-        a ``GenerationBatchResult``.  We bridge the two formats here.
-        """
-        logger.info("执行批处理\nbatch_type=%s", type(batch).__name__)
+        """执行模型批次并转换结果格式；后续轮次跳过详细日志的构造。"""
+        if should_log_inference_details():
+            logger.info(f"执行批处理\nbatch_type={type(batch).__name__}")
+        else:
+            pass
         del pp_proxy_tensors
         self.emit_prefill_start_for_batch(batch)
         self.stamp_batch_launch(batch)
         sched_output = self.build_sched_output(batch)
-        logger.info("开始执行模型推理")
+        if should_log_inference_details():
+            logger.info("开始执行模型推理")
+        else:
+            pass
         mr_output = self.model_runner.execute(sched_output)
-        result_fields = {
-            "batch_size": len(mr_output.req_ids),
-            "next_token_ids": summarize_for_log(mr_output.next_token_ids),
-            "host_token_ids": summarize_for_log(mr_output.host_token_ids, preview_elements=5),
-        }
-        logger.info("推理完成，结果详情\n%s",
-            json_for_log(result_fields))
+        if should_log_inference_details():
+            result_fields = {
+                "batch_size": len(mr_output.req_ids),
+                "next_token_ids": summarize_for_log(mr_output.next_token_ids),
+                "host_token_ids": summarize_for_log(
+                    mr_output.host_token_ids, preview_elements=5
+                ),
+            }
+            logger.info(f"推理完成，结果详情\n{json_for_log(result_fields)}")
+        else:
+            pass
 
         self.emit_prefill_end_for_batch(batch)
         self.emit_stream_output(sched_output, mr_output)
@@ -2178,14 +2195,16 @@ class OmniScheduler(Generic[RequestDataT]):
         )
 
     def run_batch_launch(self, batch):
-        """Async: build SchedulerOutput and launch the decode step on the GPU
-        (forward + sample, then ``post_decode_launch`` publishes the resolve
-        payload), without waiting. Returns ``(sched_output, pending_step)``; the
-        caller holds the pending step (launch-first keeps two steps in flight)."""
-        self.emit_prefill_start_for_batch(batch)
-        self.stamp_batch_launch(batch)
-        sched_output = self.build_sched_output(batch)
-        with request_log_context(*sched_output.request_ids):
+        """异步发起计算，在首轮标记更新前确定日志范围，返回待回收的结果。"""
+        with (
+            request_log_context(*(req.rid for req in batch.reqs)),
+            inference_log_context(
+                any(req.rid not in self.prefill_start_done for req in batch.reqs)
+            ),
+        ):
+            self.emit_prefill_start_for_batch(batch)
+            self.stamp_batch_launch(batch)
+            sched_output = self.build_sched_output(batch)
             pending_step = self.model_runner.execute_launch(sched_output)
         return sched_output, pending_step
 

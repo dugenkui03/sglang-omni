@@ -14,6 +14,7 @@ from sglang_omni.models.weight_loader import default_weight_loader
 from sglang_omni.platforms import current_platform
 from sglang_omni.quantization import get_weight_preprocessor
 from sglang_omni.utils import add_prefix
+from sglang_omni.utils.request_context import should_log_inference_details
 from sglang_omni.vendor.sglang.core import ForwardBatch
 from sglang_omni.vendor.sglang.distributed import tensor_model_parallel_all_reduce
 from sglang_omni.vendor.sglang.layers import (
@@ -264,11 +265,24 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
     ):
+        """准备 QKV 和位置编码，沿用外层的轮次及层日志范围。"""
         qkv, _ = self.qkv_proj(hidden_states)
-        logger.info("注意力层 QKV 投影\nhidden_states.shape=%s, qkv.shape=%s", hidden_states.shape, qkv.shape)
+        if should_log_inference_details():
+            logger.info(
+                f"注意力层 QKV 投影，layer_id={self.layer_id}\n"
+                f"hidden_states.shape={hidden_states.shape}, qkv.shape={qkv.shape}"
+            )
+        else:
+            pass
 
         q, k, v = self.apply_qk_norm_rope(qkv, positions, forward_batch)
-        logger.info("完成 Q/K 归一化与旋转位置编码(RoPE)\nq.shape=%s, k.shape=%s, v.shape=%s", q.shape, k.shape, v.shape)
+        if should_log_inference_details():
+            logger.info(
+                f"完成 Q/K 归一化与旋转位置编码(RoPE)，layer_id={self.layer_id}\n"
+                f"q.shape={q.shape}, k.shape={k.shape}, v.shape={v.shape}"
+            )
+        else:
+            pass
 
         inner_state = q, k, v, forward_batch
         return None, forward_batch, inner_state
@@ -361,6 +375,7 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         )
 
     def forward_core(self, intermediate_state):
+        """完成注意力加权及投影，选中层之外只省略日志。"""
         hidden_states, forward_batch, inner_state = intermediate_state
         if inner_state is None:
             return hidden_states
@@ -379,7 +394,13 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
             fb,
             save_kv_cache=save_kv_cache,
         )
-        logger.info("完成注意力加权计算\nq.shape=%s, k.shape=%s, attn_output.shape=%s", q.shape, k.shape, attn_output.shape)
+        if should_log_inference_details():
+            logger.info(
+                f"完成注意力加权计算，layer_id={self.layer_id}\n"
+                f"q.shape={q.shape}, k.shape={k.shape}, attn_output.shape={attn_output.shape}"
+            )
+        else:
+            pass
         # Note:(Chenchen Hong) cast attn output to the compute dtype (v.dtype),
         # not o_proj.weight.dtype: for FP8 weights the latter feeds an fp8
         # activation to the quantizer, which post1's sgl_kernel rejects.
@@ -388,7 +409,13 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         else:
             pass
         output, _ = self.o_proj(attn_output)
-        logger.info("完成注意力输出投影\nattn_output.shape=%s, output.shape=%s", attn_output.shape, output.shape)
+        if should_log_inference_details():
+            logger.info(
+                f"完成注意力输出投影，layer_id={self.layer_id}\n"
+                f"attn_output.shape={attn_output.shape}, output.shape={output.shape}"
+            )
+        else:
+            pass
         return output
 
     def forward(
@@ -397,8 +424,11 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
     ) -> torch.Tensor:
-        # 注意力机制实现
-        logger.info("开始 Transformer 注意力层计算")
+        """执行注意力模块，复用调用方设定的详细日志范围。"""
+        if should_log_inference_details():
+            logger.info(f"开始 Transformer 注意力层计算，layer_id={self.layer_id}")
+        else:
+            pass
         s = self.forward_prepare(
             positions=positions,
             hidden_states=hidden_states,

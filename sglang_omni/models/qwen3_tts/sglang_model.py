@@ -56,6 +56,11 @@ from sglang_omni.platforms.device_graph import ReplayableGraph
 from sglang_omni.scheduling.types import SchedulerRequest
 from sglang_omni.utils.logging import json_for_log, summarize_for_log
 from sglang_omni.utils.predictor_layers import resolve_fused_predictor_layers
+from sglang_omni.utils.request_context import (
+    inference_log_context,
+    should_log_inference_details,
+    should_log_transformer_layer,
+)
 from sglang_omni.vendor.sglang.core import ForwardBatch
 from sglang_omni.vendor.sglang.layers import ReplicatedLinear, RMSNorm
 from sglang_omni.vendor.sglang.models import FusedSetKVBufferArg, apply_qk_norm
@@ -269,8 +274,10 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
         layer_id: int,
         prefix: str = "",
     ) -> None:
+        """从模型配置读取总层数，日志采样不影响层的计算。"""
         super().__init__()
         self.layer_id = layer_id
+        self.layer_count = config.num_hidden_layers
         self.self_attn = Qwen3OmniMoeThinkerTextAttention(
             hidden_size=config.hidden_size,
             num_heads=config.num_attention_heads,
@@ -304,11 +311,15 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
         forward_batch: ForwardBatch,
         residual: Optional[torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        logger.info("开始 Transformer 层计算\n%s",
-            json_for_log({"layer_id": self.layer_id, "hidden_states": hidden_states}))
-        log_norm = logger.isEnabledFor(logging.INFO)
+        """执行完整层计算，仅为首轮选中的层构造详细日志。"""
+        log_details = should_log_transformer_layer(self.layer_id, self.layer_count)
+        log_norm = log_details and logger.isEnabledFor(logging.INFO)
         preview_elements = 5 if self.layer_id == 0 else 0
         if log_norm:
+            logger.info(
+                f"开始 Transformer 层计算\n"
+                f"{json_for_log({'layer_id': self.layer_id, 'hidden_states': hidden_states})}"
+            )
             norm_before = summarize_for_log(
                 {"hidden_states": hidden_states, "residual": residual},
                 preview_elements=preview_elements,
@@ -325,21 +336,29 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
                 {"hidden_states": hidden_states, "residual": residual},
                 preview_elements=preview_elements,
             )
-            logger.info("输入归一化(Norm)前后对比\n%s",
-                json_for_log({"layer_id": self.layer_id, "before": norm_before, "after": norm_after}))
+            logger.info(
+                f"输入归一化(Norm)前后对比\n"
+                f"{json_for_log({'layer_id': self.layer_id, 'before': norm_before, 'after': norm_after})}"
+            )
         else:
             pass
 
         # NOTE 注意力机制的实现，todo Qwen3OmniMoeThinkerTextAttention 类
-        logger.info("开始注意力计算，layer_id=%s", self.layer_id)
-        hidden_states = self.self_attn(
-            positions=positions,
-            hidden_states=hidden_states,
-            forward_batch=forward_batch,
-        )
-        logger.info("完成注意力计算\n%s",
-            json_for_log({"layer_id": self.layer_id, "hidden_states": hidden_states}))
         if log_norm:
+            logger.info(f"开始注意力计算，layer_id={self.layer_id}")
+        else:
+            pass
+        with inference_log_context(log_details):
+            hidden_states = self.self_attn(
+                positions=positions,
+                hidden_states=hidden_states,
+                forward_batch=forward_batch,
+            )
+        if log_norm:
+            logger.info(
+                f"完成注意力计算\n"
+                f"{json_for_log({'layer_id': self.layer_id, 'hidden_states': hidden_states})}"
+            )
             norm_before = summarize_for_log(
                 {"hidden_states": hidden_states, "residual": residual},
                 preview_elements=preview_elements,
@@ -353,8 +372,10 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
                 {"hidden_states": hidden_states, "residual": residual},
                 preview_elements=preview_elements,
             )
-            logger.info("注意力后归一化(Norm)前后对比\n%s",
-                json_for_log({"layer_id": self.layer_id, "before": norm_before, "after": norm_after}))
+            logger.info(
+                f"注意力后归一化(Norm)前后对比\n"
+                f"{json_for_log({'layer_id': self.layer_id, 'before': norm_before, 'after': norm_after})}"
+            )
         else:
             pass
         # TODO mlp Qwen3OmniMoeTalkerDenseMLP
@@ -431,18 +452,35 @@ class Qwen3TTSTalkerTextModel(nn.Module):
         forward_batch: ForwardBatch,
         input_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        logger.info("进入模型主链路\n%s", json_for_log({"input_ids": input_ids}))
+        """执行全部 Transformer 层，后续轮次省略详细计算日志。"""
+        log_details = should_log_inference_details() and logger.isEnabledFor(
+            logging.INFO
+        )
+        if log_details:
+            logger.info(f"进入模型主链路\n{json_for_log({'input_ids': input_ids})}")
+        else:
+            pass
         forward_mode = getattr(forward_batch, "forward_mode", None)
         is_decode = forward_mode is not None and forward_mode.is_decode()
         if input_embeds is None:
             if is_decode:
                 hidden_states = self.decode_feedback_embedding(input_ids)
-                logger.info("解码(Decode)输入\n%s",
-                    json_for_log({"input_ids": input_ids, "hidden_states": hidden_states}))
+                if log_details:
+                    logger.info(
+                        f"解码(Decode)输入\n"
+                        f"{json_for_log({'input_ids': input_ids, 'hidden_states': hidden_states})}"
+                    )
+                else:
+                    pass
             else:
                 hidden_states = self.build_input_hidden_states(input_ids)
-                logger.info("预填充(Prefill)输入\n%s",
-                    json_for_log({"input_ids": input_ids, "hidden_states": hidden_states}))
+                if log_details:
+                    logger.info(
+                        f"预填充(Prefill)输入\n"
+                        f"{json_for_log({'input_ids': input_ids, 'hidden_states': hidden_states})}"
+                    )
+                else:
+                    pass
         else:
             hidden_states = input_embeds
 
@@ -456,10 +494,15 @@ class Qwen3TTSTalkerTextModel(nn.Module):
                 forward_batch=forward_batch,
                 residual=residual,
             )
-        logger.info("完成所有 Transformer 层计算\n%s",
-            json_for_log({"input_ids": input_ids, "shape_before": before_layer_shape, "hidden_states_after": hidden_states}))
+        if log_details:
+            logger.info(
+                f"完成所有 Transformer 层计算\n"
+                f"{json_for_log({'input_ids': input_ids, 'shape_before': before_layer_shape, 'hidden_states_after': hidden_states})}"
+            )
+        else:
+            pass
 
-        log_norm = logger.isEnabledFor(logging.INFO)
+        log_norm = log_details
         if log_norm:
             norm_before = summarize_for_log(
                 {"hidden_states": hidden_states, "residual": residual}, preview_elements=5
@@ -486,8 +529,10 @@ class Qwen3TTSTalkerTextModel(nn.Module):
             norm_after = summarize_for_log(
                 {"hidden_states": hidden_states, "residual": residual}, preview_elements=5
             )
-            logger.info("最终残差合并与归一化(Norm)前后对比\n%s",
-                json_for_log({"before": norm_before, "after": norm_after}))
+            logger.info(
+                f"最终残差合并与归一化(Norm)前后对比\n"
+                f"{json_for_log({'before': norm_before, 'after': norm_after})}"
+            )
         else:
             pass
         return hidden_states
@@ -1370,7 +1415,14 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         input_embeds_are_projected: bool = False,
         omni_prefill_rids: list[str] | None = None,
     ) -> LogitsProcessorOutput:
-        logger.info("开始推理\n%s", json_for_log({"input_ids": input_ids}))
+        """执行 Talker 推理并返回 logits，只在首轮记录输入输出细节。"""
+        log_details = should_log_inference_details() and logger.isEnabledFor(
+            logging.INFO
+        )
+        if log_details:
+            logger.info(f"开始推理\n{json_for_log({'input_ids': input_ids})}")
+        else:
+            pass
         del input_embeds_are_projected, omni_prefill_rids
         if forward_batch.mrope_positions is not None:
             positions = forward_batch.mrope_positions
@@ -1384,7 +1436,12 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             forward_batch=forward_batch,
             input_embeds=input_embeds,
         )
-        logger.info("Talker 主模型推理完成\n%s", json_for_log({"hidden_states": hidden_states}))
+        if log_details:
+            logger.info(
+                f"Talker 主模型推理完成\n{json_for_log({'hidden_states': hidden_states})}"
+            )
+        else:
+            pass
         if forward_batch.forward_mode.is_extend():
             last_index = self.extend_last_index(forward_batch, hidden_states.device)
             hidden_states = hidden_states[last_index]

@@ -26,7 +26,76 @@ from sglang_omni.utils.logging import (
     PollingAccessFilter,
     json_for_log,
 )
-from sglang_omni.utils.request_context import current_request_label, request_log_context
+from sglang_omni.utils.request_context import (
+    current_request_label,
+    inference_log_context,
+    request_log_context,
+    should_log_inference_details,
+    should_log_transformer_layer,
+)
+
+
+@pytest.mark.parametrize("layer_count", [1, 2, 3, 28])
+def test_first_round_selected_layers(layer_count: int) -> None:
+    """每个请求首轮保留指定层，后续轮次关闭细节且不消耗首轮开关。"""
+    expected_layers = sorted({0, min(1, layer_count - 1), layer_count - 1})
+    for request_id in ("speech-first", "speech-next"):
+        with request_log_context(request_id):
+            for first_round in (True, False, False):
+                with inference_log_context(first_round):
+                    for _ in range(2):
+                        visible_layers = [
+                            layer_id
+                            for layer_id in range(layer_count)
+                            if should_log_transformer_layer(layer_id, layer_count)
+                        ]
+                        assert visible_layers == (
+                            expected_layers if first_round else []
+                        )
+                    assert current_request_label() == f"request_id={request_id}"
+    assert should_log_inference_details()
+
+
+def test_inference_detail_context_restores_after_layer_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """关闭某层细节不会吞掉错误，嵌套退出和异常后恢复日志范围。"""
+    logger = logging.getLogger(__name__)
+    with inference_log_context(True):
+        with pytest.raises(ValueError), inference_log_context(False):
+            with inference_log_context(True):
+                assert not should_log_inference_details()
+                logger.warning("层计算警告")
+                logger.error("层计算失败")
+                raise ValueError("层计算失败")
+        assert should_log_inference_details()
+    assert [record.getMessage() for record in caplog.records] == [
+        "层计算警告",
+        "层计算失败",
+    ]
+    assert should_log_inference_details()
+
+
+def test_inference_detail_context_task_and_thread_isolation() -> None:
+    """并行请求及转交线程的日志范围独立，不能相互关闭或开启。"""
+
+    async def request(request_id: str, first_round: bool) -> bool:
+        """交错运行后检查线程继承的轮次开关与请求 ID。"""
+        with request_log_context(request_id), inference_log_context(first_round):
+            await asyncio.sleep(0)
+            assert await asyncio.to_thread(current_request_label) == (
+                f"request_id={request_id}"
+            )
+            return await asyncio.to_thread(should_log_inference_details)
+
+    async def concurrent_requests() -> list[bool]:
+        """同时模拟首轮和后续轮次，检验上下文隔离。"""
+        return await asyncio.gather(
+            request("speech-first", True), request("speech-later", False)
+        )
+
+    assert asyncio.run(concurrent_requests()) == [True, False]
+    assert should_log_inference_details()
 
 
 @pytest.mark.parametrize(
@@ -269,7 +338,13 @@ def test_threaded_scheduler_logs_receive_and_failure_with_request_id(
         assert "收到新请求" in rendered
         assert "计算函数执行失败" in rendered
         assert rendered.count("  request_id=speech-failed\n") == 2
-        assert "request_id=-" not in rendered
+        request_logs = [
+            record
+            for record in rendered.split("\n\n")
+            if "收到新请求" in record or "计算函数执行失败" in record
+        ]
+        assert len(request_logs) == 2
+        assert all("request_id=-" not in record for record in request_logs)
     finally:
         scheduler.stop()
         thread.join(timeout=5)
