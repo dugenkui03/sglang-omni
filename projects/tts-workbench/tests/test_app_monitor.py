@@ -523,3 +523,121 @@ def test_log_search_api_returns_complete_expandable_records(settings: Settings) 
         assert page["records"][0]["request_ids"] == ["speech-search"]
         assert page["records"][0]["method"] == "Qwen3TTSTalkerDecoderLayer.forward()"
         assert page["retention_limit"] == 20_000_000
+
+
+def test_log_search_jumps_to_numbered_pages_in_a_frozen_result(
+    settings: Settings,
+) -> None:
+    """直接跳到第 35 页和末页，新日志不会导致重复、遗漏或虚增页数。"""
+    assert settings.log_file is not None
+    record = request_record("request_id=speech-pages", "分页关键字")
+    settings.log_file.write_text(record * 3508)
+    with TestClient(create_app(settings)) as client:
+        client.get("/api/workbench/logs")
+        query = {
+            "request_id": "speech-pages",
+            "keyword": "分页关键字",
+            "location": "sglang_model.py",
+        }
+        first = client.get("/api/workbench/logs/search", params=query).json()
+        assert first["total_pages"] == 36
+        assert first["page"] == 1
+        with settings.log_file.open("a") as stream:
+            stream.write(record)
+        client.get("/api/workbench/logs")
+        query["snapshot"] = first["snapshot"]
+        middle = client.get(
+            "/api/workbench/logs/search", params={**query, "page": 35}
+        ).json()
+        assert middle["page"] == 35
+        assert middle["matched_records"] == 3508
+        assert [row["id"] for row in middle["records"]] == list(range(108, 8, -1))
+        last = client.get(
+            "/api/workbench/logs/search", params={**query, "page": 44}
+        ).json()
+        assert last["page"] == 36
+        assert [row["id"] for row in last["records"]] == list(range(8, 0, -1))
+        assert last["next_before"] is None
+        assert (
+            client.get("/api/workbench/logs/search", params={"page": 0}).status_code
+            == 422
+        )
+
+
+def test_log_page_boundaries_keep_oversized_records_whole(tmp_path: Path) -> None:
+    """行数预算影响总页数，超长单条独占一页，直接跳页仍覆盖全部记录。"""
+    path = tmp_path / "server.log"
+    short = request_record("request_id=speech-budget", "short")
+    long = request_record("request_id=speech-budget", "long\n" + "  extra\n" * 50)
+    path.write_text(short * 2 + long + short * 2)
+    with closing(LogArchive(tmp_path, path)) as archive:
+        archive.synchronize()
+        pages = [
+            search_log_history(archive.database_path, limit=12, page=number)
+            for number in (1, 2, 3)
+        ]
+        assert [page.total_pages for page in pages] == [3, 3, 3]
+        assert [[record.id for record in page.records] for page in pages] == [
+            [5, 4],
+            [3],
+            [2, 1],
+        ]
+        assert pages[1].records[0].text == long
+        empty = search_log_history(archive.database_path, request_id="missing", page=9)
+        assert empty.total_pages == 0
+        assert not empty.records
+
+
+def test_log_time_sort_applies_before_pagination_and_survives_upgrade(
+    tmp_path: Path,
+) -> None:
+    """验证乱序日志全量时间排序、同秒稳定顺序及旧库补建索引。"""
+    path = tmp_path / "server.log"
+    records = [
+        request_record("request_id=speech-sort", f"message-{second}").replace(
+            "[02:00:47]", f"[12:{second // 60:02}:{second % 60:02}]"
+        )
+        for second in reversed(range(205))
+    ]
+    path.write_text("".join(records))
+    with closing(LogArchive(tmp_path, path)) as archive:
+        archive.synchronize()
+        with archive.connection:
+            archive.connection.execute("DROP INDEX log_time_id")
+            archive.connection.execute(
+                "ALTER TABLE log_records DROP COLUMN sort_seconds"
+            )
+    with closing(LogArchive(tmp_path, path)) as archive:
+        first = search_log_history(
+            archive.database_path, request_id="speech-sort", order="asc"
+        )
+        last = search_log_history(
+            archive.database_path, request_id="speech-sort", order="asc", page=3
+        )
+        newest = search_log_history(
+            archive.database_path, request_id="speech-sort", order="desc"
+        )
+        assert first.total_pages == 3
+        assert first.records[0].time == "12:00:00"
+        assert first.records[-1].time == "12:01:39"
+        assert last.records[0].time == "12:03:20"
+        assert last.records[-1].time == "12:03:24"
+        assert newest.records[0].id == last.records[-1].id
+        with path.open("a") as stream:
+            stream.write(
+                request_record("request_id=speech-sort", "午夜之前").replace(
+                    "[02:00:47]", "[23:59:59]"
+                )
+                + request_record("request_id=speech-sort", "午夜之后").replace(
+                    "[02:00:47]", "[00:00:01]"
+                )
+                * 2
+            )
+        archive.synchronize()
+        midnight = search_log_history(archive.database_path, order="desc")
+        assert [record.time for record in midnight.records[:3]] == [
+            "00:00:01",
+            "00:00:01",
+            "23:59:59",
+        ]
+        assert midnight.records[0].id > midnight.records[1].id

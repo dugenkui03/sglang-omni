@@ -430,10 +430,12 @@ def create_app(settings: Settings) -> FastAPI:
         limit: int = Query(DEFAULT_LOG_LINES, ge=1, le=MAX_LOG_LINES),
         snapshot: int | None = Query(None, ge=0),
         before: int | None = Query(None, ge=1),
+        page: int = Query(1, ge=1),
+        order: Literal["asc", "desc"] = "desc",
     ) -> LogSearchPage:
         """查询归档中的完整日志记录，并用快照固定分页结果。"""
         archive = runtime_from(request).logs
-        page = await asyncio.to_thread(
+        result = await asyncio.to_thread(
             search_log_history,
             archive.database_path,
             request_id.strip(),
@@ -443,9 +445,11 @@ def create_app(settings: Settings) -> FastAPI:
             limit,
             snapshot,
             before,
+            page,
+            order,
         )
-        page.warning = archive.error
-        return page
+        result.warning = archive.error
+        return result
 
     @app.get("/api/workbench/logs/download")
     async def download_logs(

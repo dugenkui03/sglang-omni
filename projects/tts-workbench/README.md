@@ -251,11 +251,13 @@ projects/tts-workbench/
 | `GET /requests?task_name=...` | 按任务名称部分匹配搜索全部历史请求，支持分页与仅失败筛选 |
 | `GET /task-name` | 预览下一个默认任务名称，创建任务时才分配序号 |
 | `GET /logs?cursor=...&limit=2000&request_id=...` | SQLite 历史及增量游标；可选 request_id、scope=all/system/inference；完整块查询，返回 matched_lines 总行数；默认 2,000 行，显示上限 30,000 |
-| `GET /logs/search?request_id=...&keyword=...&location=...` | 按全部保留记录组合搜索，返回折叠卡片字段、总记录/行数、snapshot 和 next_before；按 before 向前分页 |
+| `GET /logs/search?request_id=...&keyword=...&location=...&page=35&snapshot=...&order=asc` | 全部匹配记录按日志时间排序（asc 从早到晚，desc 从晚到早，同秒按记录 ID），再按页码取数；返回 page、total_pages、snapshot；底部可跳页、到首页和末页，每页最多 100 条且遵守行数预算，超长单条保持完整。切换排序重新搜索，翻页保留快照 |
 | `GET /logs/download?request_id=...` | 下载 SQLite 保留范围内该请求的全部完整记录，不受每页行数限制 |
 | `GET /audio/{request_id}`、`GET /references/{line_id}` | 已抽样生成音频、已知素材音频 |
 
 修改接口需要 `X-Workbench-Client: 1` 请求头，浏览器页面已自动处理。回环地址与 SSH 转发模式免登录；配置访问口令时，页面和接口统一使用 HTTP Basic 认证。新增请求时，空筛选列表表示全部素材，`single` 模式必须明确选择一个 `line_id`。
+
+日志头当前只有时分秒；归档按原始记录顺序识别跨午夜的时间回绕，生成可索引的时间顺序，不伪造原始日志未提供的日期。旧归档首次升级时补建时间索引，后续重启复用。日志页码由服务端按记录数和行数预算计算，加载时禁用翻页按钮，避免重复点击累计出错误页码。
 
 ## 验证
 

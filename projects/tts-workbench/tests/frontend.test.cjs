@@ -18,8 +18,8 @@ function harness() {
         logMatchedLines: null,
         logResult: null,
         logSnapshot: null,
-        logBefore: null,
-        logPages: [],
+        logPage: 1,
+        logOrder: "desc",
         logRequestId: "",
         logScope: "all",
         logKeyword: "",
@@ -121,7 +121,7 @@ test("search combines all filters and renders collapsed escaped records without 
     let query;
     context.api = async path => {
         query = path;
-        return {records:[{id:7,time:"12:00:00",level:"INFO",location:"model.py:315",method:"forward()",summary:"<script>attention</script>",request_ids:["speech-a"],line_count:6,text:'[12:00:00] INFO\n  {"value":12}\n'}],snapshot:7,next_before:null,matched_records:1,matched_lines:6,retained_lines:6};
+        return {records:[{id:7,time:"12:00:00",level:"INFO",location:"model.py:315",method:"forward()",summary:"<script>attention</script>",request_ids:["speech-a"],line_count:6,text:'[12:00:00] INFO\n  {"value":12}\n'}],snapshot:7,page:1,total_pages:1,next_before:null,matched_records:1,matched_lines:6,retained_lines:6};
     };
     context.applyLogRequestFilter();
     await new Promise(resolve => setImmediate(resolve));
@@ -142,7 +142,7 @@ test("new search aborts stale response and keeps the latest result", async () =>
     context.api = () => new Promise(resolve => resolvers.push(resolve));
     const first=context.refreshLogs();
     const second=context.refreshLogs();
-    const page={records:[],snapshot:22,next_before:null,matched_records:0,matched_lines:0,retained_lines:100};
+    const page={records:[],snapshot:22,page:1,total_pages:0,next_before:null,matched_records:0,matched_lines:0,retained_lines:100};
     resolvers[1](page);
     await second;
     resolvers[0]({...page,snapshot:11});
@@ -165,4 +165,59 @@ test("log line budget is bounded and a search failure does not schedule retries"
     await context.refreshLogs();
     assert.equal(calls,1);
     assert.match(element("log-status").textContent,/搜索失败/);
+});
+
+test("jump goes directly to a server page and repeated clicks cannot advance while loading", async () => {
+    const {state, element, context} = harness();
+    state.logResult = {records:[], page:1, total_pages:36};
+    state.logSnapshot = 3508;
+    state.logRequestId = "speech-pages";
+    const queries = [];
+    let resolve;
+    context.api = path => {
+        queries.push(path);
+        return new Promise(done => { resolve = done; });
+    };
+    const pending = context.jumpToLogPage(35);
+    context.jumpToLogPage(36);
+    assert.equal(queries.length, 1);
+    assert.equal(state.logPage, 1);
+    assert.equal(element("log-next").disabled, true);
+    assert.match(queries[0], /page=35/);
+    assert.match(queries[0], /snapshot=3508/);
+    assert.match(queries[0], /request_id=speech-pages/);
+    resolve({records:[], page:35, total_pages:36, snapshot:3508});
+    await pending;
+    assert.equal(state.logPage, 35);
+    assert.match(element("log-window-count").textContent, /35 \/ 36/);
+    assert.equal(element("log-page-number").max, 36);
+    context.api = async () => { throw new Error("网络错误"); };
+    await context.jumpToLogPage(36);
+    assert.equal(state.logPage, 35);
+    assert.equal(element("log-page-number").value, 35);
+    assert.equal(element("log-next").disabled, false);
+});
+
+test("changing time order starts a new filtered search from the first page", async () => {
+    const {state, element, context} = harness();
+    state.logPage = 35;
+    state.logSnapshot = 3508;
+    element("log-order").value = "asc";
+    element("log-request-id").value = "speech-pages";
+    element("log-filter").value = "注意力";
+    element("log-location").value = "model.py";
+    let query;
+    context.api = async path => {
+        query = path;
+        return {records:[],page:1,total_pages:36,snapshot:3600};
+    };
+    context.applyLogRequestFilter();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(query, /page=1/);
+    assert.match(query, /order=asc/);
+    assert.match(query, /request_id=speech-pages/);
+    assert.match(query, /location=model.py/);
+    assert.doesNotMatch(query, /snapshot=/);
+    assert.equal(state.logPage, 1);
+    assert.equal(state.logSnapshot, 3600);
 });

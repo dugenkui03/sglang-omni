@@ -16,6 +16,7 @@ from tts_workbench.log_search import (
     LOCATION_PATTERN,
     MAX_ARCHIVE_LINES,
     initialize_log_search,
+    log_time_seconds,
     prune_log_history,
 )
 from tts_workbench.monitor import MAX_LOG_BYTES, LogTail
@@ -94,7 +95,8 @@ class LogArchive:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA busy_timeout=5000")
-        self.connection.executescript("""
+        self.connection.executescript(
+            """
             CREATE TABLE IF NOT EXISTS log_sources (
                 path TEXT PRIMARY KEY, identity TEXT NOT NULL,
                 byte_offset INTEGER NOT NULL, fingerprint TEXT NOT NULL
@@ -112,7 +114,8 @@ class LogArchive:
                 request_id TEXT NOT NULL, record_id INTEGER NOT NULL REFERENCES log_records(id),
                 PRIMARY KEY(request_id, record_id)
             ) WITHOUT ROWID;
-            """)
+            """
+        )
         initialize_log_search(self.connection, self.retention_limit)
 
     def close(self) -> None:
@@ -148,6 +151,9 @@ class LogArchive:
                         offset = previous_offset
                 stream.seek(offset)
                 category_totals: dict[str, tuple[int, int]] = {}
+                previous_seconds = self.connection.execute(
+                    "SELECT COALESCE(MAX(sort_seconds),0) FROM log_records"
+                ).fetchone()[0]
                 for offset, raw_record in log_records(stream, metadata.st_size):
                     raw_record = ANSI_ESCAPE.sub(b"", raw_record)
                     text = raw_record.decode("utf-8", errors="replace")
@@ -159,8 +165,10 @@ class LogArchive:
                     )
                     line_count = len(text.splitlines())
                     location = LOCATION_PATTERN.search(text)
+                    timestamp_seconds = log_time_seconds(text, previous_seconds)
+                    previous_seconds = max(previous_seconds, timestamp_seconds)
                     inserted = self.connection.execute(
-                        "INSERT INTO log_records(source_path,text,line_count,byte_count,category,location) VALUES(?,?,?,?,?,?)",
+                        "INSERT INTO log_records(source_path,text,line_count,byte_count,category,location,sort_seconds) VALUES(?,?,?,?,?,?,?)",
                         (
                             source_path,
                             text,
@@ -168,6 +176,7 @@ class LogArchive:
                             len(raw_record),
                             category,
                             location.group(1) if location else "",
+                            timestamp_seconds,
                         ),
                     )
                     record_id = inserted.lastrowid

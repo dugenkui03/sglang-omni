@@ -19,8 +19,8 @@ const state = {
     logLineLimit: DEFAULT_LOG_LINES,
     logResult: null,
     logSnapshot: null,
-    logBefore: null,
-    logPages: [],
+    logPage: 1,
+    logOrder: "desc",
     logRequestId: "",
     logScope: "all",
     logKeyword: "",
@@ -331,14 +331,14 @@ async function initialize() {
         applyLogRequestFilter();
     });
     element("log-limit").addEventListener("change", () => { updateLogLimit(); applyLogRequestFilter(); });
-    element("log-next").addEventListener("click", () => {
-        state.logPages.push(state.logBefore);
-        state.logBefore = state.logResult.next_before;
-        refreshLogs();
-    });
-    element("log-previous").addEventListener("click", () => {
-        state.logBefore = state.logPages.pop() ?? null;
-        refreshLogs();
+    element("log-order").addEventListener("change", applyLogRequestFilter);
+    element("log-first").addEventListener("click", () => jumpToLogPage(1));
+    element("log-previous").addEventListener("click", () => jumpToLogPage(state.logPage - 1));
+    element("log-next").addEventListener("click", () => jumpToLogPage(state.logPage + 1));
+    element("log-last").addEventListener("click", () => jumpToLogPage(state.logResult.total_pages));
+    element("log-page-form").addEventListener("submit", event => {
+        event.preventDefault();
+        jumpToLogPage(Number(element("log-page-number").value));
     });
     element("log-output").addEventListener("click", event => {
         const request = event.target.closest("[data-log-request]");

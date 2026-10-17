@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 MAX_ARCHIVE_LINES = 20_000_000
 SEARCH_PAGE_RECORDS = 100
+SECONDS_PER_DAY = 86400
+LOG_CLOCK_PATTERN = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2})\] ")
 LOCATION_PATTERN = re.compile(r"^  ([^\s]+:\d+)\s*$", re.MULTILINE)
 HEADER_PATTERN = re.compile(r"^\[([^\]]+)\] (\w+)")
 METHOD_PATTERN = re.compile(r"^    method：(.*)$", re.MULTILINE)
@@ -36,11 +38,33 @@ class LogSearchPage(BaseModel):
     records: list[LogRecordView]
     snapshot: int
     next_before: int | None
+    page: int
+    total_pages: int
     matched_records: int
     matched_lines: int
     retained_lines: int
     retention_limit: int = MAX_ARCHIVE_LINES
     warning: str | None = None
+
+
+def log_time_seconds(text: str, previous_seconds: int) -> int:
+    """按日志头的时分秒建立时间顺序，跨午夜延续日期，无时间的输出跟随前条。"""
+    clock = LOG_CLOCK_PATTERN.match(text)
+    if clock is None:
+        return previous_seconds
+    else:
+        hour, minute, second = map(int, clock.groups())
+        timestamp_seconds = (
+            previous_seconds // SECONDS_PER_DAY * SECONDS_PER_DAY
+            + hour * 3600
+            + minute * 60
+            + second
+        )
+        if timestamp_seconds < previous_seconds - SECONDS_PER_DAY // 2:
+            timestamp_seconds += SECONDS_PER_DAY
+        else:
+            pass
+        return timestamp_seconds
 
 
 def prune_log_history(connection: sqlite3.Connection, limit: int) -> None:
@@ -76,10 +100,30 @@ def prune_log_history(connection: sqlite3.Connection, limit: int) -> None:
 
 def initialize_log_search(connection: sqlite3.Connection, retention_limit: int) -> None:
     """为新日志库建立索引，重启时复用已有索引。"""
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(log_records)")}
+    if "sort_seconds" not in columns:
+        with connection:
+            connection.execute("BEGIN")
+            connection.execute(
+                "ALTER TABLE log_records ADD COLUMN sort_seconds INTEGER NOT NULL DEFAULT 0"
+            )
+            previous_seconds = 0
+            for row in connection.execute(
+                "SELECT id,text FROM log_records ORDER BY id"
+            ):
+                timestamp_seconds = log_time_seconds(row[1], previous_seconds)
+                connection.execute(
+                    "UPDATE log_records SET sort_seconds=? WHERE id=?",
+                    (timestamp_seconds, row[0]),
+                )
+                previous_seconds = max(previous_seconds, timestamp_seconds)
+    else:
+        pass
     connection.executescript(
         """
         CREATE INDEX IF NOT EXISTS log_request_record ON log_requests(record_id);
         CREATE INDEX IF NOT EXISTS log_location_id ON log_records(location,id);
+        CREATE INDEX IF NOT EXISTS log_time_id ON log_records(sort_seconds,id);
         CREATE VIRTUAL TABLE IF NOT EXISTS log_text_search USING fts5(
             text,content='log_records',content_rowid='id',tokenize='trigram',detail='none'
         );
@@ -104,8 +148,10 @@ def search_log_history(
     limit: int = 2000,
     snapshot: int | None = None,
     before: int | None = None,
+    page: int = 1,
+    order: Literal["asc", "desc"] = "desc",
 ) -> LogSearchPage:
-    """在全部保留历史中搜索，按完整记录分页并限制每页大小。"""
+    """在固定快照内按页码搜索，行数预算和完整记录共同决定页边界。"""
     with closing(sqlite3.connect(database_path)) as connection:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=5000")
@@ -149,17 +195,53 @@ def search_log_history(
         else:
             pass
         where = " AND ".join(predicates)
-        total = connection.execute(
-            f"SELECT COUNT(*),COALESCE(SUM(records.line_count),0) {source} WHERE {where}",
+        direction = "ASC" if order == "asc" else "DESC"
+        order_by = f"records.sort_seconds {direction},records.id {direction}"
+        boundaries = connection.execute(
+            f"SELECT records.id,records.line_count,records.sort_seconds {source} WHERE {where} ORDER BY {order_by}",
             parameters,
-        ).fetchone()
+        )
+        matched_records = matched_lines = total_pages = 0
+        page_records = page_lines = 0
+        selected_start = None
+        last_start = (0, 0)
+        cursor_page = None
+        # 仅扫描时间、记录 ID 和行数，避免为跳页加载前面所有日志正文。
+        for boundary in boundaries:
+            if not page_records or (
+                page_records >= SEARCH_PAGE_RECORDS
+                or page_lines + boundary["line_count"] > limit
+            ):
+                total_pages += 1
+                page_records = page_lines = 0
+                last_start = (boundary["sort_seconds"], boundary["id"])
+                if total_pages == page:
+                    selected_start = last_start
+                else:
+                    pass
+            else:
+                pass
+            if before is not None and cursor_page is None and boundary["id"] < before:
+                cursor_page = total_pages
+            else:
+                pass
+            page_records += 1
+            page_lines += boundary["line_count"]
+            matched_records += 1
+            matched_lines += boundary["line_count"]
         if before is not None:
             where += " AND records.id<?"
             parameters.append(before)
+            page = cursor_page or max(1, total_pages)
         else:
-            pass
+            page = max(1, min(page, total_pages))
+            comparison = ">=" if order == "asc" else "<="
+            where += f" AND (records.sort_seconds,records.id){comparison}(?,?)"
+            parameters.extend(
+                selected_start if selected_start is not None else last_start
+            )
         rows = connection.execute(
-            f"SELECT records.* {source} WHERE {where} ORDER BY records.id DESC LIMIT ?",
+            f"SELECT records.* {source} WHERE {where} ORDER BY {order_by} LIMIT ?",
             [*parameters, SEARCH_PAGE_RECORDS + 1],
         )
         records: list[LogRecordView] = []
@@ -205,7 +287,9 @@ def search_log_history(
             records=records,
             snapshot=snapshot,
             next_before=next_before,
-            matched_records=total[0],
-            matched_lines=total[1],
+            page=page,
+            total_pages=total_pages,
+            matched_records=matched_records,
+            matched_lines=matched_lines,
             retained_lines=retained_lines,
         )
