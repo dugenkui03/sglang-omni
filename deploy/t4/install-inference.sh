@@ -6,7 +6,9 @@ runtime_root=${SGLANG_OMNI_RUNTIME_ROOT:-/root/.local/share/sglang-omni-runtime/
 repository_root=${SGLANG_OMNI_REPOSITORY_ROOT:-/root/workspace/sglang-omni}
 chroot "$runtime_root" /usr/bin/env REPOSITORY_ROOT="$repository_root" /bin/bash -eu -c '
 cd "$REPOSITORY_ROOT"
-uv venv --python /usr/bin/python3 .venv-cu126
+if ! test -f .venv-cu126/pyvenv.cfg; then
+  uv venv --python /usr/bin/python3 .venv-cu126
+fi
 uv pip install --python .venv-cu126/bin/python \
   --index https://download.pytorch.org/whl/cu126 --index-strategy unsafe-best-match \
   --overrides deploy/t4/overrides-cu126.txt --excludes deploy/t4/excludes-cu126.txt \
