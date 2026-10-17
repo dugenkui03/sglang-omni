@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from io import StringIO
 from threading import Thread
 
 import numpy as np
@@ -239,6 +240,40 @@ def test_scheduler_worker_rebinds_and_clears_identity() -> None:
         )
         assert executor.submit(current_request_label).result() == "request_id=-"
     scheduler.executor.shutdown()
+
+
+def test_threaded_scheduler_logs_receive_and_failure_with_request_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """验证实际接收和失败回调日志均在第二行保留请求 ID。"""
+
+    def compute(payload: str) -> str:
+        """触发计算失败，覆盖线程池的异常完成回调。"""
+        raise ValueError(payload)
+
+    output = StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(DebugLogFormatter())
+    logger = logging.getLogger("sglang_omni.scheduling.threaded_simple_scheduler")
+    scheduler = ThreadedSimpleScheduler(compute, max_concurrency=1)
+    thread = Thread(target=scheduler.start, daemon=True)
+    logger.addHandler(handler)
+    try:
+        with caplog.at_level(logging.INFO, logger=logger.name):
+            thread.start()
+            scheduler.enqueue(
+                IncomingMessage("speech-failed", "new_request", "failed")
+            )
+            assert scheduler.outbox.get(timeout=5).type == "error"
+        rendered = output.getvalue()
+        assert "收到新请求" in rendered
+        assert "计算函数执行失败" in rendered
+        assert rendered.count("  request_id=speech-failed\n") == 2
+        assert "request_id=-" not in rendered
+    finally:
+        scheduler.stop()
+        thread.join(timeout=5)
+        logger.removeHandler(handler)
 
 
 @pytest.mark.parametrize(

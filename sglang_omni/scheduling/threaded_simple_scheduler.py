@@ -115,6 +115,7 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
         pass
 
     def start(self) -> None:
+        """接收请求并分发到计算线程，接收日志绑定原始请求 ID。"""
         self.running = True
         try:
             while self.running:
@@ -130,7 +131,8 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
                 if msg.type != "new_request":
                     continue
                 else:
-                    logger.info("收到新请求：%s", msg.request_id)
+                    with request_log_context(msg.request_id):
+                        logger.info(f"收到新请求：request_id={msg.request_id}")
                 request_id = msg.request_id
                 with self.lock:
                     try:
@@ -245,6 +247,7 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
             return result
 
     def finish(self, request_id: str, future: Future) -> None:
+        """发布计算结果，并为失败回调日志恢复请求 ID。"""
         with self.lock:
             if self.pending.get(request_id) is future:
                 self.pending.pop(request_id, None)
@@ -267,9 +270,8 @@ class ThreadedSimpleScheduler(Generic[ComputeInput, ComputeResult]):
         try:
             result = future.result()
         except BaseException as exc:
-            logger.exception(
-                "ThreadedSimpleScheduler: compute_fn failed for %s", request_id
-            )
+            with request_log_context(request_id):
+                logger.exception(f"计算函数执行失败：request_id={request_id}")
             self.outbox.put(
                 OutgoingMessage(request_id=request_id, type="error", data=exc)
             )

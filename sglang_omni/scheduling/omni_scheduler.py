@@ -2013,7 +2013,8 @@ class OmniScheduler(Generic[RequestDataT]):
                             ├─ tts_engine 的结果 → 下游 vocoder
                             └─ vocoder 最终结果 → Coordinator       // 重点，将数据给到上游 Coordinator
         """
-        _Upstream.process_batch_result(self, batch, result)
+        with request_log_context(*(request.rid for request in batch.reqs)):
+            _Upstream.process_batch_result(self, batch, result)
         # note (Richard Wang): cache prompt before blocking tail inserts
         for req in batch.reqs:
             if req.output_ids and getattr(
