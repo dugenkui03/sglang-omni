@@ -405,7 +405,8 @@ def make_fun_asr_scheduler_adapters(
         logger.debug(
             f"[fun-asr] prompt_tokens={len(input_ids)} "
             f"audio_tokens={num_audio_tokens} sampling temp={temperature} "
-            f"max_new_tokens={request_max_new_tokens} params={dict(params)}"
+            f"max_new_tokens={request_max_new_tokens} "
+            f"repetition_penalty={params.get('repetition_penalty', 1.0)}"
         )
         sampling_params = SamplingParams(
             max_new_tokens=request_max_new_tokens,

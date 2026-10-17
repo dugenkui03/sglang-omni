@@ -355,9 +355,6 @@ def build_qwen3_tts_state(
     inputs = payload.request.inputs or {}
     params = payload.request.params or {}
     metadata = payload.request.metadata or {}
-    logger.info("TTS 请求参数\n%s",
-        json_for_log({"inputs": inputs, "params": params, "metadata": metadata}))
-
     tts_params = metadata.get("tts_params")
     if not isinstance(tts_params, dict):
         tts_params = {}
@@ -384,9 +381,6 @@ def build_qwen3_tts_state(
     #     ]
     # }
     text, references = normalize_qwen3_tts_inputs(inputs)
-    logger.info("获取 TTS 文本和参考信息\n%s",
-        json_for_log({"text": text, "references": references}))
-
     # tip 判断请求是否有 克隆 tts 需要的 ref_audio 和 red_text
     has_reference = has_voice_clone_reference(references, tts_params)
 
@@ -495,7 +489,7 @@ def build_qwen3_tts_state(
         tts_params=tts_params,
     )
 
-    return Qwen3TTSState(
+    state = Qwen3TTSState(
         text=text, # 要 tts 的文本
         task_type=task_type, # 任务类型，包括：Base-有克隆的tts；CustomVoice-内置音色tts；VoiceDesign-自定义音色tts
         task_type_explicit=task_type_explicit,
@@ -523,6 +517,22 @@ def build_qwen3_tts_state(
         ),
         seed=normalized_seed,
     )
+    request_summary = {
+        "text": text,
+        "task_type": task_type,
+        "language": language,
+        "voice": voice,
+        "instructions": instructions,
+        "ref_text": ref_text,
+        "has_reference_audio": ref_audio is not None,
+        "x_vector_only_mode": x_vector_only_mode,
+        "non_streaming_mode": non_streaming_mode,
+        "stream_codec_output": stream_codec_output,
+        "generation_kwargs": state.generation_kwargs,
+        "seed": normalized_seed,
+    }
+    logger.info(f"TTS request parameters\n{json_for_log(request_summary)}")
+    return state
 
 
 def normalize_qwen3_tts_inputs(inputs: object) -> tuple[str, list[dict[str, object]]]:
@@ -1111,8 +1121,10 @@ class Qwen3TTSRefCodeBatcher:
             [waveform], sr=sample_rate
         )
         samples = torch.from_numpy(audio[0]) # 因为 _normalize_audio_inputs 输入只有一个元素，所以这里只获取第一个结果
-        logger.info("声音波形规范化（多声道转换成单声，采样率对齐）\n%s",
-            json_for_log({"before": {"waveform": waveform, "sample_rate_hz": sample_rate}, "after": {"waveform": samples}}, preview_elements=5))
+        logger.info(
+            f"Reference waveform normalized\n"
+            f"{json_for_log({'reference_audio': waveform, 'sample_rate_hz': sample_rate, 'waveform': samples})}"
+        )
 
         if self.graph_runner is not None:
             # CUDA Graph 链路
@@ -1141,8 +1153,7 @@ class Qwen3TTSRefCodeBatcher:
             num_quantizers=self.num_quantizers,  # 一帧音频的 codebook 数量，目前是 16
             return_dict=True
         ).audio_codes
-        logger.info("声音编码完成，打印结果形状和第一帧的16个码本编号\n%s",
-            json_for_log({"shape": list(codes.shape), "first_frame_codebook_ids": codes[0, :, 0].detach().cpu().tolist()}))
+        logger.info(f"Reference codec encoding complete\n{json_for_log(codes)}")
 
         # 返回 [音频帧数， 16] 形状的结果
         #
@@ -1305,7 +1316,7 @@ class Qwen3TTSAdhocReferenceHook(
             # NOTE step 1: 获取波形数组和采样率
             #
             #  示例（2s音频）
-            #       waveform_shape=(48000,), waveform_first5=[0.01, 0.02, -0.01, 0.0, 0.03], sample_rate_hz=24000
+            #       waveform_shape=(48000,), sample_rate_hz=24000
             waveform, sample_rate = normalized[0]
             logger.info("参考音频解码完成，得到波形(Waveform)\n%s",
                 json_for_log({"waveform": waveform, "sample_rate_hz": sample_rate, "duration_seconds": round(len(waveform) / sample_rate, 3)}))
@@ -1681,8 +1692,6 @@ def prepare_qwen3_tts_request(
         payload, # 输入参数
         default_stream_codec_output=default_stream_codec_output
     )
-    logger.info("预处理请求状态 Qwen3TTSState\n%s", json_for_log(state))
-
     validate_qwen3_tts_model_task(model, state)
     gen_kwargs = wrapper._merge_generate_kwargs(
         **state.generation_kwargs

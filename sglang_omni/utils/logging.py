@@ -21,9 +21,46 @@ from pydantic import BaseModel, JsonValue
 
 from sglang_omni.utils.request_context import current_request_label
 
+AUDIO_LOG_FIELDS = frozenset(
+    {
+        "data",
+        "audio",
+        "audio_path",
+        "audio_data",
+        "audio_base64",
+        "ref_audio",
+        "reference_audio",
+        "waveform",
+        "samples",
+        "speaker_waveform",
+        "ref_code",
+        "audio_codes",
+        "speaker_embedding",
+        "ref_spk_embedding",
+        "mel",
+    }
+)
 
-def summarize_for_log(value: object, *, preview_elements: int = 0) -> JsonValue:
-    """Convert mixed request data to JSON values without dumping array contents."""
+
+def summarize_for_log(
+    value: object, *, preview_elements: int = 0, field_name: str = ""
+) -> JsonValue:
+    """Summarize request data; audio fields never include encoded or sample values."""
+    if isinstance(value, str) and value.startswith("data:") and ";base64," in value:
+        return {
+            "type": "data_uri",
+            "media_type": value[5 : value.index(";")],
+            "characters": len(value),
+        }
+    elif field_name in AUDIO_LOG_FIELDS:
+        if isinstance(value, str):
+            return {"type": "audio_source", "characters": len(value)}
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            return {"type": type(value).__name__, "items": len(value)}
+        else:
+            preview_elements = 0
+    else:
+        pass
     if isinstance(value, (torch.Tensor, np.ndarray)):
         summary: dict[str, JsonValue] = {
             "shape": list(value.shape),
@@ -55,7 +92,10 @@ def summarize_for_log(value: object, *, preview_elements: int = 0) -> JsonValue:
                     np.arange(min(preview_elements, value.numel())), value.shape
                 )
                 preview = value.detach()[
-                    tuple(torch.as_tensor(axis, device=value.device) for axis in coordinates)
+                    tuple(
+                        torch.as_tensor(axis, device=value.device)
+                        for axis in coordinates
+                    )
                 ]
             sample = preview.cpu().tolist()
         else:
@@ -66,20 +106,16 @@ def summarize_for_log(value: object, *, preview_elements: int = 0) -> JsonValue:
         return summarize_for_log(value.item())
     elif is_dataclass(value) and not isinstance(value, type):
         # Field access avoids asdict() deep-copying tensors and runtime handles.
-        return {
-            field.name: summarize_for_log(
-                getattr(value, field.name), preview_elements=preview_elements
-            )
-            for field in fields(value)
-        }
+        return summarize_for_log(
+            {field.name: getattr(value, field.name) for field in fields(value)},
+            preview_elements=preview_elements,
+        )
     elif isinstance(value, BaseModel):
         return summarize_for_log(dict(value), preview_elements=preview_elements)
     elif isinstance(value, Mapping):
         return {
-            str(key): (
-                {"type": "encoded_data", "characters": len(item)}
-                if key == "data" and isinstance(item, str)
-                else summarize_for_log(item, preview_elements=preview_elements)
+            str(key): summarize_for_log(
+                item, preview_elements=preview_elements, field_name=str(key)
             )
             for key, item in value.items()
         }
@@ -89,12 +125,6 @@ def summarize_for_log(value: object, *, preview_elements: int = 0) -> JsonValue:
         ]
     elif isinstance(value, (bytes, bytearray, memoryview)):
         return {"type": type(value).__name__, "bytes": memoryview(value).nbytes}
-    elif isinstance(value, str) and value.startswith("data:") and ";base64," in value:
-        return {
-            "type": "data_uri",
-            "media_type": value[5 : value.index(";")],
-            "characters": len(value),
-        }
     elif isinstance(value, Enum):
         return summarize_for_log(value.value)
     elif isinstance(value, Path):
@@ -108,7 +138,7 @@ def summarize_for_log(value: object, *, preview_elements: int = 0) -> JsonValue:
 
 
 def json_for_log(value: object, *, preview_elements: int = 0) -> str:
-    """Serialize one compact JSON line, with array values sampled only on request."""
+    """Serialize compact metadata, allowing explicit previews only for non-audio arrays."""
     return json.dumps(
         summarize_for_log(value, preview_elements=preview_elements),
         ensure_ascii=False,

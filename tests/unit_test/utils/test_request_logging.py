@@ -1,19 +1,88 @@
 """Verify request attribution without requiring CUDA or model weights."""
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
+import numpy as np
 import pytest
+import torch
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
+from starlette.types import Message, Receive, Scope, Send
+
 from sglang_omni.http.request_logging import RequestLoggingApp
 from sglang_omni.scheduling.threaded_simple_scheduler import ThreadedSimpleScheduler
-from sglang_omni.utils.logging import DebugLogFormatter, PollingAccessFilter
+from sglang_omni.utils.logging import (
+    DebugLogFormatter,
+    PollingAccessFilter,
+    json_for_log,
+)
 from sglang_omni.utils.request_context import current_request_label, request_log_context
-from starlette.types import Message, Receive, Scope, Send
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["data", "audio", "audio_path", "audio_base64", "ref_audio", "reference_audio"],
+)
+def test_encoded_audio_log_keeps_metadata_only(field_name: str) -> None:
+    """Nested reference payloads must not expose Base64, even with previews enabled."""
+    encoded_audio = "UklGRkaWAABXQVZF" * 4096
+    request = {"references": [{field_name: encoded_audio, "text": "参考台词"}]}
+    rendered = json_for_log(request, preview_elements=5)
+    summary = json.loads(rendered)
+    assert encoded_audio[:32] not in rendered
+    assert len(rendered) < 200
+    assert summary["references"][0][field_name]["characters"] == len(encoded_audio)
+    assert summary["references"][0]["text"] == "参考台词"
+    assert request["references"][0][field_name] == encoded_audio
+
+
+@pytest.mark.parametrize("source_kind", ["list", "numpy", "torch", "bytes"])
+def test_waveform_log_omits_samples(source_kind: str) -> None:
+    """Audio values stay hidden for each supported representation without mutation."""
+    waveform = {
+        "list": [0.125] * 24000,
+        "numpy": np.full(24000, 0.125, dtype=np.float32),
+        "torch": torch.full((24000,), 0.125),
+        "bytes": b"sample-data" * 24000,
+    }[source_kind]
+    request = {"waveform": waveform, "sample_rate_hz": 24000, "duration_seconds": 1.0}
+    rendered = json_for_log(request, preview_elements=5)
+    summary = json.loads(rendered)
+    assert "0.125" not in rendered
+    assert "sample-data" not in rendered
+    assert "first5" not in rendered
+    assert len(rendered) < 250
+    assert summary["sample_rate_hz"] == 24000
+    assert summary["duration_seconds"] == 1.0
+    assert request["waveform"] is waveform
+
+
+def test_reference_dataclass_log_preserves_core_fields() -> None:
+    """Normalize reference dataclasses without losing field-aware audio protection."""
+
+    @dataclass
+    class Reference:
+        """Represent the reference encoder's normalized input."""
+
+        ref_audio: str
+        ref_text: str
+        x_vector_only_mode: bool
+
+    reference = Reference("UklGRkaWAABXQVZF" * 4096, "参考台词", False)
+    summary = json.loads(json_for_log(reference))
+    assert summary["ref_audio"]["characters"] == len(reference.ref_audio)
+    assert summary["ref_text"] == reference.ref_text
+    assert summary["x_vector_only_mode"] is False
+    data_uri = "data:audio/wav;base64," + reference.ref_audio
+    uri_summary = json.loads(json_for_log({"audio_path": data_uri}))["audio_path"]
+    assert uri_summary["media_type"] == "audio/wav"
+    assert uri_summary["characters"] == len(data_uri)
 
 
 def formatted_log() -> str:

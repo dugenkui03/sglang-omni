@@ -445,7 +445,8 @@ def make_qwen3_asr_scheduler_adapters(
 
         logger.debug(
             f"[qwen3-asr] sampling temp={temperature} "
-            f"max_new_tokens={request_max_new_tokens} params={dict(params)}"
+            f"max_new_tokens={request_max_new_tokens} "
+            f"repetition_penalty={params.get('repetition_penalty', 1.0)}"
         )
         sampling_params = SamplingParams(
             max_new_tokens=request_max_new_tokens,
