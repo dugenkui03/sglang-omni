@@ -3,7 +3,7 @@ humming-kernels[cu12]==0.1.12
 nvidia-cutlass-dsl==4.6.2
 cuda-python==12.9.4
 nixl-cu12==1.5.0
-mooncake-transfer-engine==0.3.13.post1
+mooncake-transfer-engine==0.3.12
 nvshmem4py-cu12
 torch==2.13.0+cu126
 torchvision==0.28.0+cu126
