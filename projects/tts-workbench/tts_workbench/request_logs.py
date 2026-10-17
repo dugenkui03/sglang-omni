@@ -12,6 +12,12 @@ from contextlib import closing
 from pathlib import Path
 from typing import BinaryIO, Literal
 
+from tts_workbench.log_search import (
+    LOCATION_PATTERN,
+    MAX_ARCHIVE_LINES,
+    initialize_log_search,
+    prune_log_history,
+)
 from tts_workbench.monitor import MAX_LOG_BYTES, LogTail
 
 logger = logging.getLogger(__name__)
@@ -69,7 +75,13 @@ def log_records(stream: BinaryIO, end_offset: int) -> Iterator[tuple[int, bytes]
 class LogArchive:
     """Preserve log history separately from deletable test results and audio samples."""
 
-    def __init__(self, root: Path, source: Path | None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        source: Path | None,
+        *,
+        retention_limit: int = MAX_ARCHIVE_LINES,
+    ) -> None:
         """Create a WAL database with exact request-ID membership indexes."""
         root.mkdir(parents=True, exist_ok=True)
         self.database_path = root / "logs.sqlite3"
@@ -77,12 +89,12 @@ class LogArchive:
         self.lock = threading.RLock()
         self.stop = asyncio.Event()
         self.error: str | None = None
+        self.retention_limit = retention_limit
         self.connection = sqlite3.connect(self.database_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA busy_timeout=5000")
-        self.connection.executescript(
-            """
+        self.connection.executescript("""
             CREATE TABLE IF NOT EXISTS log_sources (
                 path TEXT PRIMARY KEY, identity TEXT NOT NULL,
                 byte_offset INTEGER NOT NULL, fingerprint TEXT NOT NULL
@@ -90,7 +102,7 @@ class LogArchive:
             CREATE TABLE IF NOT EXISTS log_records (
                 id INTEGER PRIMARY KEY, source_path TEXT NOT NULL,
                 text TEXT NOT NULL, line_count INTEGER NOT NULL, byte_count INTEGER NOT NULL,
-                category TEXT NOT NULL
+                category TEXT NOT NULL, location TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS log_category_id ON log_records(category,id);
             CREATE TABLE IF NOT EXISTS log_totals (
@@ -100,42 +112,8 @@ class LogArchive:
                 request_id TEXT NOT NULL, record_id INTEGER NOT NULL REFERENCES log_records(id),
                 PRIMARY KEY(request_id, record_id)
             ) WITHOUT ROWID;
-            """
-        )
-        if self.connection.execute("PRAGMA user_version").fetchone()[0] < 1:
-            with self.connection:
-                last_id = 0
-                while True:
-                    rows = self.connection.execute(
-                        "SELECT id,text FROM log_records WHERE category='system' AND id>? ORDER BY id LIMIT 1000",
-                        (last_id,),
-                    ).fetchall()
-                    if not rows:
-                        break
-                    last_id = rows[-1]["id"]
-                    for row in rows:
-                        identities = record_request_ids(row["text"].encode())
-                        if identities:
-                            self.connection.executemany(
-                                "INSERT OR IGNORE INTO log_requests VALUES(?,?)",
-                                [(identity, row["id"]) for identity in identities],
-                            )
-                            category = (
-                                "inference"
-                                if any(
-                                    value.startswith("speech-") for value in identities
-                                )
-                                else "http"
-                            )
-                            self.connection.execute(
-                                "UPDATE log_records SET category=? WHERE id=?",
-                                (category, row["id"]),
-                            )
-                self.connection.execute("DELETE FROM log_totals")
-                self.connection.execute(
-                    "INSERT INTO log_totals SELECT category,SUM(line_count),MAX(id) FROM log_records GROUP BY category"
-                )
-                self.connection.execute("PRAGMA user_version=1")
+            """)
+        initialize_log_search(self.connection, self.retention_limit)
 
     def close(self) -> None:
         """Release the archive only after background ingestion and readers finish."""
@@ -180,9 +158,17 @@ class LogArchive:
                         else "http" if identities else "system"
                     )
                     line_count = len(text.splitlines())
+                    location = LOCATION_PATTERN.search(text)
                     inserted = self.connection.execute(
-                        "INSERT INTO log_records(source_path,text,line_count,byte_count,category) VALUES(?,?,?,?,?)",
-                        (source_path, text, line_count, len(raw_record), category),
+                        "INSERT INTO log_records(source_path,text,line_count,byte_count,category,location) VALUES(?,?,?,?,?,?)",
+                        (
+                            source_path,
+                            text,
+                            line_count,
+                            len(raw_record),
+                            category,
+                            location.group(1) if location else "",
+                        ),
                     )
                     record_id = inserted.lastrowid
                     assert record_id is not None
@@ -210,6 +196,7 @@ class LogArchive:
                     "identity=excluded.identity,byte_offset=excluded.byte_offset,fingerprint=excluded.fingerprint",
                     (source_path, identity, offset, fingerprint),
                 )
+                prune_log_history(self.connection, self.retention_limit)
                 self.error = None
         except OSError as exception:
             message = f"Log ingestion unavailable: {exception}"

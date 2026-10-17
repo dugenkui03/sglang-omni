@@ -37,6 +37,7 @@ from sglang_omni.proto import (
     is_update_action,
 )
 from sglang_omni.proto.admin import AdminResponse
+from sglang_omni.utils.request_context import request_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -486,135 +487,133 @@ class Coordinator(CoordinatorSessions):
 
         NOTE 普通链路，讲请求提交到 子进程 stage 处理
         """
-        if self.fatal_error is not None:
-            raise RuntimeError(self.fatal_error)
-        else:
-            pass
-        if self.request_id_is_reserved(request_id):
-            raise ValueError(f"Request {request_id} already exists")
-        else:
-            pass
-        if stream_queue is not None and stream_queue.maxsize > 0:
-            raise ValueError(
-                "stream_queue must be unbounded because one completion loop "
-                "delivers events for every request and a full queue would stall "
-                f"them all, got maxsize={stream_queue.maxsize}"
+        with request_log_context(request_id):
+            if self.fatal_error is not None:
+                raise RuntimeError(self.fatal_error)
+            else:
+                pass
+            if self.request_id_is_reserved(request_id):
+                raise ValueError(f"Request {request_id} already exists")
+            else:
+                pass
+            if stream_queue is not None and stream_queue.maxsize > 0:
+                raise ValueError(
+                    "stream_queue must be unbounded because one completion loop "
+                    "delivers events for every request and a full queue would stall "
+                    f"them all, got maxsize={stream_queue.maxsize}"
+                )
+            else:
+                pass
+
+            if (
+                not should_bypass_admission
+                and self.max_in_flight is not None
+                and len(self.requests) >= self.max_in_flight # 目前已经执行的请求达到了阈值
+            ):
+                logger.warning(
+                    "Rejecting request %s before pipeline submit: in-flight cap "
+                    "(max_in_flight=%s)",
+                    request_id,
+                    self.max_in_flight,
+                )
+                raise QueueFullError()
+            else:
+                pass
+
+            if not isinstance(request, OmniRequest):
+                request = OmniRequest(inputs=request)
+            else:
+                pass
+
+            if replica_bindings is None:
+                replica_bindings = assign_replica_bindings(
+                    self.logical_process_plan, self.binding_policy, request_id
+                )
+            else:
+                pass
+            bindings = replica_bindings or {}
+            entry_instance = target_stage or (
+                self.replica_topology.resolve(self.entry_stage, bindings[self.entry_stage])
+                if self.replica_topology.is_replicated(self.entry_stage)
+                else self.entry_stage
             )
-        else:
-            pass
+            if entry_instance not in self.stages:
+                raise ValueError(f"Entry stage {entry_instance} not registered")
+            else:
+                pass
+            entry_info = self.stages[entry_instance]
 
-        if (
-            not should_bypass_admission
-            and self.max_in_flight is not None
-            and len(self.requests) >= self.max_in_flight # 目前已经执行的请求达到了阈值
-        ):
-            logger.warning(
-                "Rejecting request %s before pipeline submit: in-flight cap "
-                "(max_in_flight=%s)",
-                request_id,
-                self.max_in_flight,
-            )
-            raise QueueFullError()
-        else:
-            pass
-
-        if not isinstance(request, OmniRequest):
-            request = OmniRequest(inputs=request)
-        else:
-            pass
-
-        if replica_bindings is None:
-            replica_bindings = assign_replica_bindings(
-                self.logical_process_plan, self.binding_policy, request_id
-            )
-        else:
-            pass
-        bindings = replica_bindings or {}
-        entry_instance = target_stage or (
-            self.replica_topology.resolve(self.entry_stage, bindings[self.entry_stage])
-            if self.replica_topology.is_replicated(self.entry_stage)
-            else self.entry_stage
-        )
-        if entry_instance not in self.stages:
-            raise ValueError(f"Entry stage {entry_instance} not registered")
-        else:
-            pass
-        entry_info = self.stages[entry_instance]
-
-        # Track request
-        # NOTE 保存请求ID及其对应的请求状态
-        self.requests[request_id] = RequestInfo(
-            request_id=request_id,
-            state=RequestState.PENDING, # 请求状态：PENDING -> RUNNING -> COMPLETED/FAILED/ABORTED
-            current_stage=self.entry_stage,
-            terminal_stages=(
-                self.resolve_terminal_stages(request)
-                if terminal_stages is None
-                else terminal_stages
-            ),
-        )
-
-        # Create future for completion
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        self.completion_futures[request_id] = future
-        if stream_queue is not None:
-            self.stream_queues[request_id] = stream_queue
-        else:
-            pass
-
-        payload = StagePayload(
-            request_id=request_id,
-            request=request,
-            data={"raw_inputs": request.inputs},
-        )
-
-        _emit_event(
-            request_id=request_id,
-            stage="coordinator",
-            event_name="request_admission",
-            metadata={"entry_stage": self.entry_stage},
-        )
-
-        try:
-            # NOTE 这里提交任务到子进程的 stage
-            #    coordinator -> coordinator_plane -> coordinator_socket -> stage_socket
-            #       -> stage_plane -> stage(仅负责数据交换) -> Scheduler.start() 之后的 loop 读取 scheduler.inbox 数据做处理
-            await self.control_plane.submit_to_stage(
-                entry_instance,
-                entry_info.control_endpoint,
-                SubmitMessage(
-                    request_id=request_id,
-                    data=payload,
-                    replica_bindings=replica_bindings,
+            # Track request
+            # NOTE 保存请求ID及其对应的请求状态
+            self.requests[request_id] = RequestInfo(
+                request_id=request_id,
+                state=RequestState.PENDING, # 请求状态：PENDING -> RUNNING -> COMPLETED/FAILED/ABORTED
+                current_stage=self.entry_stage,
+                terminal_stages=(
+                    self.resolve_terminal_stages(request)
+                    if terminal_stages is None
+                    else terminal_stages
                 ),
             )
-        except Exception:
-            # Serialization runs before the socket send, and a ZMQ send either
-            # queues the whole message or raises. No stage holds this request,
-            # so it is dropped without an abort that would retire its ID there.
-            self.requests.pop(request_id, None)
-            await self.release_submission(request_id, future)
-            raise
-        except BaseException:
-            # A cancelled send may already be queued for the entry stage.
-            await self.release_submission(request_id, future)
-            raise
 
-        # Update state
-        info = self.requests.get(request_id)
-        if info is not None:
-            info.state = RequestState.RUNNING
-        else:
-            pass
+            # Create future for completion
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future = loop.create_future()
+            self.completion_futures[request_id] = future
+            if stream_queue is not None:
+                self.stream_queues[request_id] = stream_queue
+            else:
+                pass
 
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"Coordinator submitted req={request_id} to {entry_instance} "
-                f"at {entry_info.control_endpoint} bindings={replica_bindings}"
+            payload = StagePayload(
+                request_id=request_id,
+                request=request,
+                data={"raw_inputs": request.inputs},
             )
-        else:
-            pass
+
+            _emit_event(
+                request_id=request_id,
+                stage="coordinator",
+                event_name="request_admission",
+                metadata={"entry_stage": self.entry_stage},
+            )
+
+            try:
+                # NOTE 这里提交任务到子进程的 stage
+                #    coordinator -> coordinator_plane -> coordinator_socket -> stage_socket
+                #       -> stage_plane -> stage(仅负责数据交换) -> Scheduler.start() 之后的 loop 读取 scheduler.inbox 数据做处理
+                await self.control_plane.submit_to_stage(
+                    entry_instance,
+                    entry_info.control_endpoint,
+                    SubmitMessage(
+                        request_id=request_id,
+                        data=payload,
+                        replica_bindings=replica_bindings,
+                    ),
+                )
+            except Exception:
+                # Serialization runs before the socket send, and a ZMQ send either
+                # queues the whole message or raises. No stage holds this request,
+                # so it is dropped without an abort that would retire its ID there.
+                self.requests.pop(request_id, None)
+                await self.release_submission(request_id, future)
+                raise
+            except BaseException:
+                # A cancelled send may already be queued for the entry stage.
+                await self.release_submission(request_id, future)
+                raise
+
+            # Update state
+            info = self.requests.get(request_id)
+            if info is not None:
+                info.state = RequestState.RUNNING
+            else:
+                pass
+
+            logger.info(
+                f"Coordinator 已提交请求：request_id={request_id}, stage={entry_instance}, "
+                f"endpoint={entry_info.control_endpoint}, bindings={replica_bindings}"
+            )
 
     async def release_submission(self, request_id: str, future: asyncio.Future) -> None:
         """Release a submission whose caller no longer awaits its completion."""
@@ -778,18 +777,24 @@ class Coordinator(CoordinatorSessions):
         try:
             while self.running:
                 msg = await self.control_plane.recv_event()
-                if isinstance(msg, StreamMessage):
-                    logger.info("收到流式请求消息，提交给 stage stream\n%s",
-                        json.dumps({"request_id": msg.request_id, "from_stage": msg.from_stage, "chunk_id": msg.chunk_id}, ensure_ascii=False, indent=2))
-                    await self.handle_stream(msg)
-                elif isinstance(msg, AdminResultMessage):
-                    logger.info("收到管理消息\n%s",
-                        json.dumps({"op_id": msg.result.op_id, "stage": msg.result.stage, "success": msg.result.success}, ensure_ascii=False, indent=2))
+                if isinstance(msg, AdminResultMessage):
+                    logger.info(
+                        f"Coordinator 收到管理结果：op_id={msg.result.op_id}, "
+                        f"stage={msg.result.stage}, success={msg.result.success}"
+                    )
                     self.handle_admin_result(msg.result)
                 else:
-                    logger.info("收到请求完成消息\n%s",
-                        json.dumps({"request_id": msg.request_id, "from_stage": msg.from_stage, "success": msg.success}, ensure_ascii=False, indent=2))
-                    await self.handle_completion(msg)
+                    with request_log_context(msg.request_id):
+                        if isinstance(msg, StreamMessage):
+                            logger.info(
+                                f"Coordinator 收到流式消息：stage={msg.from_stage}, chunk={msg.chunk_id}"
+                            )
+                            await self.handle_stream(msg)
+                        else:
+                            logger.info(
+                                f"Coordinator 收到阶段完成消息：stage={msg.from_stage}, success={msg.success}"
+                            )
+                            await self.handle_completion(msg)
         except asyncio.CancelledError:
             logger.info("Coordinator completion loop cancelled")
         except Exception as e:

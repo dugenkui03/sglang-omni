@@ -22,6 +22,7 @@ from typing import Awaitable, Callable, Generic, Protocol
 from sglang_omni.proto.request import StagePayload
 from sglang_omni.scheduling.message import IncomingMessage, OutgoingMessage
 from sglang_omni.scheduling.threaded_simple_scheduler import ComputeInput, ComputeResult
+from sglang_omni.utils.request_context import request_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -255,29 +256,31 @@ class SimpleScheduler(Generic[ComputeInput, ComputeResult]):
         )
 
     def run_single(self, msg: IncomingMessage, loop: asyncio.AbstractEventLoop) -> None:
-        if self.consume_if_aborted(msg.request_id):
-            return
-        else:
-            pass
-        try:
-            # NOTE 执行计算
-            result = self.fn(msg.data)
-            if asyncio.iscoroutine(result):
-                result = loop.run_until_complete(result)
-            else:
-                pass
-        except Exception:
+        """在串行调度线程中恢复请求 ID。"""
+        with request_log_context(msg.request_id):
             if self.consume_if_aborted(msg.request_id):
                 return
             else:
                 pass
-            raise
-        if self.consume_if_aborted(msg.request_id):
-            return
-        else:
-            pass
-        # NOTE 这里会把结果放到 result 中
-        self.emit_result(msg.request_id, result, self.outbox)
+            try:
+                # NOTE 执行计算
+                result = self.fn(msg.data)
+                if asyncio.iscoroutine(result):
+                    result = loop.run_until_complete(result)
+                else:
+                    pass
+            except Exception:
+                if self.consume_if_aborted(msg.request_id):
+                    return
+                else:
+                    pass
+                raise
+            if self.consume_if_aborted(msg.request_id):
+                return
+            else:
+                pass
+            # NOTE 这里会把结果放到 result 中
+            self.emit_result(msg.request_id, result, self.outbox)
 
     def run_batch(
         self,
@@ -287,36 +290,37 @@ class SimpleScheduler(Generic[ComputeInput, ComputeResult]):
         """
         NTOE 完成组批，执行任务
         """
-        if self.batch_fn is None or len(batch) <= 1:
-            # NOTE 不支持组批，单条处理
-            for msg in batch:
-                self.run_single(msg, loop) # 结果通过 self 放到 out_box 了
-            return
-        else:
-            pass
-
-        # NOTE 批处理请求
-        payloads = [msg.data for msg in batch]
-        results = self.batch_fn(payloads)
-        if asyncio.iscoroutine(results):
-            results = loop.run_until_complete(results)
-        else:
-            pass
-        if len(results) != len(batch):
-            raise ValueError(
-                f"batch_compute_fn returned {len(results)} results for {len(batch)} requests"
-            )
-        else:
-            pass
-        for msg, result in zip(batch, results):
-            if self.consume_if_aborted(msg.request_id):
-                continue
+        with request_log_context(*(message.request_id for message in batch)):
+            if self.batch_fn is None or len(batch) <= 1:
+                # NOTE 不支持组批，单条处理
+                for msg in batch:
+                    self.run_single(msg, loop) # 结果通过 self 放到 out_box 了
+                return
             else:
                 pass
-            if isinstance(result, BaseException):
-                self.emit_error(msg.request_id, result, self.outbox)
+
+            # NOTE 批处理请求
+            payloads = [msg.data for msg in batch]
+            results = self.batch_fn(payloads)
+            if asyncio.iscoroutine(results):
+                results = loop.run_until_complete(results)
             else:
-                self.emit_result(msg.request_id, result, self.outbox)
+                pass
+            if len(results) != len(batch):
+                raise ValueError(
+                    f"batch_compute_fn returned {len(results)} results for {len(batch)} requests"
+                )
+            else:
+                pass
+            for msg, result in zip(batch, results):
+                if self.consume_if_aborted(msg.request_id):
+                    continue
+                else:
+                    pass
+                if isinstance(result, BaseException):
+                    self.emit_error(msg.request_id, result, self.outbox)
+                else:
+                    self.emit_result(msg.request_id, result, self.outbox)
 
     @staticmethod
     async def await_result(result: Awaitable[ComputeResult]) -> ComputeResult:
@@ -418,24 +422,25 @@ class SimpleScheduler(Generic[ComputeInput, ComputeResult]):
                     continue
                 else:
                     pass
-                try:
-                    result = await asyncio.to_thread(
-                        self.run_compute_in_thread, msg.data
-                    )
-                    if self.consume_if_aborted(msg.request_id):
-                        continue
-                    else:
-                        pass
-                    self.emit_result(msg.request_id, result, self.outbox)
-                except Exception as exc:
-                    if self.consume_if_aborted(msg.request_id):
-                        continue
-                    else:
-                        pass
-                    logger.exception(
-                        "SimpleScheduler: compute_fn failed for %s", msg.request_id
-                    )
-                    self.emit_error(msg.request_id, exc, self.outbox)
+                with request_log_context(msg.request_id):
+                    try:
+                        result = await asyncio.to_thread(
+                            self.run_compute_in_thread, msg.data
+                        )
+                        if self.consume_if_aborted(msg.request_id):
+                            continue
+                        else:
+                            pass
+                        self.emit_result(msg.request_id, result, self.outbox)
+                    except Exception as exc:
+                        if self.consume_if_aborted(msg.request_id):
+                            continue
+                        else:
+                            pass
+                        logger.exception(
+                            "SimpleScheduler: compute_fn failed for %s", msg.request_id
+                        )
+                        self.emit_error(msg.request_id, exc, self.outbox)
 
         bridge_task = asyncio.create_task(bridge_inbox())
         worker_tasks = [

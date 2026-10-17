@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from tts_workbench.app import create_app
 from tts_workbench.config import RunConfig, Settings
+from tts_workbench.log_search import search_log_history
 from tts_workbench.monitor import (
     DEFAULT_LOG_LINES,
     MAX_LOG_BYTES,
@@ -137,7 +138,7 @@ def request_record(identity: str, message: str) -> str:
     """Build the production multiline shape for request-log boundary cases."""
     return (
         f"[02:00:47] INFO\n  {identity}\n  sglang_model.py:315\n"
-        f"    方法：Qwen3TTSTalkerDecoderLayer.forward()\n      内容：{message}\n\n"
+        f"    method：Qwen3TTSTalkerDecoderLayer.forward()\n      msg：{message}\n\n"
     )
 
 
@@ -408,16 +409,117 @@ def test_archive_indexes_payload_ids_and_searches_historical_keywords(
         assert archive.tail(None, None, 100, "system", "STARTUP").text == startup
         assert archive.tail(None, None, 100, "inference", "preprocess").text == payload
         assert archive.tail(None, "speech-a-extra", 100).matched_lines == 0
-        with archive.connection:
-            archive.connection.execute(
-                "DELETE FROM log_requests WHERE request_id='speech-a'"
-            )
-            archive.connection.execute(
-                "UPDATE log_records SET category='system' WHERE text=?", (payload,)
-            )
-            archive.connection.execute("PRAGMA user_version=0")
+
+
+def test_indexed_log_search_combines_filters_and_freezes_pages(tmp_path: Path) -> None:
+    """验证全历史搜索、字面关键字匹配和快照分页不受新日志干扰。"""
+    path = tmp_path / "server.log"
+    old = request_record(
+        "request_ids=[speech-a, speech-b]", '开始注意力计算 {"value":"100%_ok"}'
+    )
+    recent = request_record("request_id=speech-a-extra", "irrelevant")
+    path.write_text(old * 3 + recent * 120)
     with closing(LogArchive(tmp_path, path)) as archive:
-        assert archive.tail(None, "speech-a", 100).text == payload
-        assert (
-            archive.tail(None, None, 100, "inference", "preprocess").matched_lines == 6
+        archive.synchronize()
+        page = search_log_history(
+            archive.database_path, "speech-a", "注意力", "sglang_model.py:315", limit=6
         )
+        assert page.matched_records == 3
+        assert page.matched_lines == 18
+        assert page.records[0].request_ids == ["speech-a", "speech-b"]
+        assert page.records[0].text == old
+        assert page.records[0].location == "sglang_model.py:315"
+        assert page.next_before == page.records[-1].id
+        with path.open("a") as stream:
+            stream.write(old)
+        archive.synchronize()
+        second = search_log_history(
+            archive.database_path,
+            "speech-a",
+            "注意力",
+            "sglang_model.py:315",
+            limit=6,
+            snapshot=page.snapshot,
+            before=page.next_before,
+        )
+        assert second.matched_records == 3
+        assert second.records[0].id < page.records[0].id
+        assert (
+            search_log_history(archive.database_path, keyword="100%_ok").matched_records
+            == 4
+        )
+        assert (
+            search_log_history(
+                archive.database_path, location="sglang_model.py:31"
+            ).matched_records
+            == 0
+        )
+        assert (
+            search_log_history(
+                archive.database_path, location="sglang_model.py"
+            ).matched_records
+            == 124
+        )
+        assert (
+            search_log_history(archive.database_path, keyword="注意").matched_records
+            == 4
+        )
+
+
+def test_log_retention_removes_whole_records_without_reimport(tmp_path: Path) -> None:
+    """验证行数上限、索引清理及重启后不重复导入已清理记录。"""
+    path = tmp_path / "server.log"
+    records = [
+        request_record(f"request_id=speech-{index}", f"message-{index}")
+        for index in range(6)
+    ]
+    path.write_text("".join(records[:5]))
+    with closing(LogArchive(tmp_path, path, retention_limit=14)) as archive:
+        archive.synchronize()
+        page = search_log_history(archive.database_path)
+        assert page.retained_lines == 12
+        assert page.matched_records == 2
+        assert not list(archive.download("speech-0"))
+        assert (
+            search_log_history(
+                archive.database_path, keyword="message-0"
+            ).matched_records
+            == 0
+        )
+        assert b"".join(archive.download("speech-4")).decode() == records[4]
+    with closing(LogArchive(tmp_path, path, retention_limit=14)) as archive:
+        archive.synchronize()
+        assert search_log_history(archive.database_path).retained_lines == 12
+        with path.open("a") as stream:
+            stream.write(records[5])
+        archive.synchronize()
+        page = search_log_history(archive.database_path)
+        assert [row.request_ids for row in page.records] == [["speech-5"], ["speech-4"]]
+        assert (
+            archive.connection.execute("SELECT COUNT(*) FROM log_requests").fetchone()[
+                0
+            ]
+            == 2
+        )
+        assert (
+            archive.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        )
+
+
+def test_log_search_api_returns_complete_expandable_records(settings: Settings) -> None:
+    """验证接口返回代码位置、请求 ID 及未被行数预算截断的完整记录。"""
+    assert settings.log_file is not None
+    record = request_record("request_id=speech-search", "search content")
+    settings.log_file.write_text(record)
+    with TestClient(create_app(settings)) as client:
+        client.get("/api/workbench/logs")
+        response = client.get(
+            "/api/workbench/logs/search",
+            params={"request_id": "speech-search", "keyword": "CONTENT", "limit": 1},
+        )
+        assert response.status_code == 200
+        page = response.json()
+        assert page["records"][0]["text"] == record
+        assert page["records"][0]["request_ids"] == ["speech-search"]
+        assert page["records"][0]["method"] == "Qwen3TTSTalkerDecoderLayer.forward()"
+        assert page["retention_limit"] == 20_000_000

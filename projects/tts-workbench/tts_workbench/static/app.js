@@ -14,19 +14,17 @@ const state = {
     requestRunId: "",
     offset: 0,
     total: 0,
-    logCursor: null,
     logText: "",
-    logsPaused: false,
     logController: null,
     logLineLimit: DEFAULT_LOG_LINES,
+    logResult: null,
+    logSnapshot: null,
+    logBefore: null,
+    logPages: [],
     logRequestId: "",
     logScope: "all",
     logKeyword: "",
-    logFilterTimer: null,
-    logTruncated: false,
-    logLoading: false,
-    logError: "",
-    logMatchedLines: null,
+    logLocation: "",
     polling: false,
     servicePolling: false,
     submitting: false,
@@ -114,6 +112,7 @@ function selectTab(tab) {
         button.classList.toggle("active", selected);
         button.setAttribute("aria-selected", String(selected));
     });
+    if (tab === "logs" && !state.logResult) refreshLogs();
     poll();
 }
 
@@ -204,8 +203,6 @@ async function poll() {
             await refreshRequests();
         } else if (state.tab === "gpu") {
             await refreshGpu();
-        } else if (state.tab === "logs" && !state.logsPaused) {
-            await refreshLogs();
         }
         updateEstimate();
     } catch (error) {
@@ -312,7 +309,7 @@ async function initialize() {
         element("request-dialog").close();
         element("request-detail").innerHTML = "";
     });
-    element("pause-log").addEventListener("click", toggleLogFetching);
+    element("refresh-log").addEventListener("click", applyLogRequestFilter);
     element("maximize-log").addEventListener("click", toggleLogMaximized);
     element("log-dialog").addEventListener("close", restoreLogWindow);
     element("log-request-form").addEventListener("submit", (event) => {
@@ -328,21 +325,36 @@ async function initialize() {
         applyLogRequestFilter();
     });
     element("log-request-id").addEventListener("input", updateLogDownload);
-    element("log-scope").addEventListener("change", () => {
-        element("log-request-id").value = "";
-        applyLogRequestFilter();
-    });
     element("clear-log-request").addEventListener("click", () => {
-        element("log-request-id").value = "";
+        ["log-request-id", "log-filter", "log-location"].forEach(id => element(id).value = "");
+        element("log-scope").value = "all";
         applyLogRequestFilter();
     });
-    element("log-limit").addEventListener("input", updateLogLimit);
-    element("log-filter").addEventListener("input", () => {
-        clearTimeout(state.logFilterTimer);
-        state.logFilterTimer = setTimeout(
-            () => applyLogRequestFilter(false),
-            350,
-        );
+    element("log-limit").addEventListener("change", () => { updateLogLimit(); applyLogRequestFilter(); });
+    element("log-next").addEventListener("click", () => {
+        state.logPages.push(state.logBefore);
+        state.logBefore = state.logResult.next_before;
+        refreshLogs();
+    });
+    element("log-previous").addEventListener("click", () => {
+        state.logBefore = state.logPages.pop() ?? null;
+        refreshLogs();
+    });
+    element("log-output").addEventListener("click", event => {
+        const request = event.target.closest("[data-log-request]");
+        const location = event.target.closest("[data-log-location]");
+        if (request || location) {
+            event.preventDefault();
+            if (request) {
+                element("log-request-id").value = request.dataset.logRequest;
+                element("log-filter").value = "";
+                element("log-location").value = "";
+                element("log-scope").value = "all";
+            } else {
+                element("log-location").value = location.dataset.logLocation;
+            }
+            applyLogRequestFilter();
+        }
     });
     element("copy-log").addEventListener("click", copyLogs);
     try {

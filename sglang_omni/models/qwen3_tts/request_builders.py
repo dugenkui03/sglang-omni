@@ -531,7 +531,7 @@ def build_qwen3_tts_state(
         "generation_kwargs": state.generation_kwargs,
         "seed": normalized_seed,
     }
-    logger.info(f"TTS request parameters\n{json_for_log(request_summary)}")
+    logger.info(f"TTS 请求核心参数\n{json_for_log(request_summary)}")
     return state
 
 
@@ -1122,7 +1122,7 @@ class Qwen3TTSRefCodeBatcher:
         )
         samples = torch.from_numpy(audio[0]) # 因为 _normalize_audio_inputs 输入只有一个元素，所以这里只获取第一个结果
         logger.info(
-            f"Reference waveform normalized\n"
+            f"参考音频波形规范化完成\n"
             f"{json_for_log({'reference_audio': waveform, 'sample_rate_hz': sample_rate, 'waveform': samples})}"
         )
 
@@ -1153,7 +1153,7 @@ class Qwen3TTSRefCodeBatcher:
             num_quantizers=self.num_quantizers,  # 一帧音频的 codebook 数量，目前是 16
             return_dict=True
         ).audio_codes
-        logger.info(f"Reference codec encoding complete\n{json_for_log(codes)}")
+        logger.info(f"参考音频编码完成\n{json_for_log(codes)}")
 
         # 返回 [音频帧数， 16] 形状的结果
         #

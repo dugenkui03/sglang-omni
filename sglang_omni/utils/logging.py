@@ -45,7 +45,7 @@ AUDIO_LOG_FIELDS = frozenset(
 def summarize_for_log(
     value: object, *, preview_elements: int = 0, field_name: str = ""
 ) -> JsonValue:
-    """Summarize request data; audio fields never include encoded or sample values."""
+    """汇总请求核心字段，音频只保留类型、长度等元信息。"""
     if isinstance(value, str) and value.startswith("data:") and ";base64," in value:
         return {
             "type": "data_uri",
@@ -138,7 +138,7 @@ def summarize_for_log(
 
 
 def json_for_log(value: object, *, preview_elements: int = 0) -> str:
-    """Serialize compact metadata, allowing explicit previews only for non-audio arrays."""
+    """序列化精简日志，仅允许非音频数组显式预览数值。"""
     return json.dumps(
         summarize_for_log(value, preview_elements=preview_elements),
         ensure_ascii=False,
@@ -178,7 +178,7 @@ class DebugLogFormatter(logging.Formatter):
         ).strftime(datefmt or "%H:%M:%S")
 
     def format(self, record: logging.LogRecord) -> str:
-        """Insert the scoped request identity on line two without changing log calls."""
+        """统一在第二行输出请求 ID，并使用 method、msg 标识方法和内容。"""
         message = super().format(record)
         first_line, separator, remaining = message.partition("\n")
         method_name = record.funcName
@@ -210,8 +210,8 @@ class DebugLogFormatter(logging.Formatter):
             (level_color, f"[{self.formatTime(record)}] {record.levelname}"),
             ("\033[36m", f"  {current_request_label()}"),
             ("\033[34m", f"  {record.filename}:{record.lineno}"),
-            ("\033[35m", f"    方法：{method_name}()"),
-            ("\033[32m", f"      内容：{first_line}"),
+            ("\033[35m", f"    method：{method_name}()"),
+            ("\033[32m", f"      msg：{first_line}"),
         ]
         if separator:
             lines.extend(

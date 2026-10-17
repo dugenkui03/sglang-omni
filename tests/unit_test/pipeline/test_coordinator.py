@@ -1238,7 +1238,7 @@ def test_coordinator_projects_one_process_choice_onto_member_stages(
 
     with caplog.at_level("DEBUG", logger="sglang_omni.pipeline.coordinator"):
         asyncio.run(run())
-    assert "Coordinator submitted req=req-0" in caplog.text
+    assert "Coordinator 已提交请求：request_id=req-0" in caplog.text
     assert "bindings={'decode': 1, 'postprocess': 1}" in caplog.text
 
 

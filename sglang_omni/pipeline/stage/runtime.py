@@ -89,6 +89,7 @@ from sglang_omni.scheduling.message import (
     OutgoingMessage,
     StageScheduler,
 )
+from sglang_omni.utils.request_context import request_log_context
 
 TorchProfiler = current_platform.get_torch_profiler()
 
@@ -486,10 +487,14 @@ class Stage:
             | AdminMessage
         ),
     ) -> None:
+        """在跨进程接收入口恢复请求日志上下文。"""
         if isinstance(msg, SubmitMessage):
-            await self.on_submit(msg)
+            with request_log_context(msg.request_id):
+                logger.info(f"Stage 收到请求：stage={self.name}")
+                await self.on_submit(msg)
         elif isinstance(msg, DataAckMessage):
-            self.comm.ack_transfer(msg)
+            with request_log_context(msg.request_id):
+                self.comm.ack_transfer(msg)
         elif isinstance(msg, DataReadyMessage):
             self.schedule_receive_task(msg)
         elif isinstance(msg, ProfilerStartMessage):
@@ -539,21 +544,23 @@ class Stage:
         predecessor: asyncio.Future[None] | None,
         completion: asyncio.Future[None],
     ) -> None:
-        try:
-            await coro
-        finally:
-            if predecessor is not None:
-                await predecessor
-            else:
-                pass
-            if not completion.done():
-                completion.set_result(None)
-            else:
-                pass
-            if self.receive_lane_tails.get(lane) is completion:
-                self.receive_lane_tails.pop(lane, None)
-            else:
-                pass
+        """为异步接收任务绑定请求 ID，避免并行日志串线。"""
+        with request_log_context(lane[0]):
+            try:
+                await coro
+            finally:
+                if predecessor is not None:
+                    await predecessor
+                else:
+                    pass
+                if not completion.done():
+                    completion.set_result(None)
+                else:
+                    pass
+                if self.receive_lane_tails.get(lane) is completion:
+                    self.receive_lane_tails.pop(lane, None)
+                else:
+                    pass
 
     @staticmethod
     async def wait_for_receive_predecessor(
@@ -1140,30 +1147,33 @@ class Stage:
         )
 
     async def execute(self, payload: StagePayload) -> None:
-        request_id = payload.request_id
-        if request_id in self.aborted:
-            return
-        else:
-            pass
-        _emit_event(
-            request_id=request_id,
-            stage=self.name,
-            event_name="stage_dispatch",
-        )
-        if (
-            self.role == "leader"
-            and self.tp_fanout is not None
-            and getattr(self.scheduler, "requires_tp_work_fanout", False)
-        ):
-            self.tp_fanout.fanout_work(payload)
-        else:
-            pass
-        msg = IncomingMessage(request_id=request_id, type="new_request", data=payload)
-        enqueue = getattr(self.scheduler, "enqueue", None)
-        if enqueue is not None:
-            enqueue(msg)
-        else:
-            self.scheduler.inbox.put(msg)
+        """向调度器分发请求时绑定对应的请求 ID。"""
+        with request_log_context(payload.request_id):
+            logger.info(f"Stage 向调度器提交请求：stage={self.name}")
+            request_id = payload.request_id
+            if request_id in self.aborted:
+                return
+            else:
+                pass
+            _emit_event(
+                request_id=request_id,
+                stage=self.name,
+                event_name="stage_dispatch",
+            )
+            if (
+                self.role == "leader"
+                and self.tp_fanout is not None
+                and getattr(self.scheduler, "requires_tp_work_fanout", False)
+            ):
+                self.tp_fanout.fanout_work(payload)
+            else:
+                pass
+            msg = IncomingMessage(request_id=request_id, type="new_request", data=payload)
+            enqueue = getattr(self.scheduler, "enqueue", None)
+            if enqueue is not None:
+                enqueue(msg)
+            else:
+                self.scheduler.inbox.put(msg)
 
     async def on_admin(self, msg: AdminMessage) -> None:
         operation = msg.operation
@@ -1320,108 +1330,110 @@ class Stage:
             # 这里是保存 已经获取的、要给到下游的消息？
             stream_run: list[OutgoingMessage] = []
             for batch_index in range(_OUTBOX_DRAIN_BATCH_SIZE):
-                if out.type == "stream" and out.target is not None:
-                    stream_run.append(out)
-                else:
-                    if stream_run:
-                        await self.route_stream_run(stream_run)
-                        stream_run = []
+                with request_log_context(out.request_id):
+                    if out.type == "stream" and out.target is not None:
+                        stream_run.append(out)
                     else:
-                        pass
-                    if out.type == "admitted":
-                        if out.request_id not in self.aborted:
-                            self.record_replica_bindings(
-                                out.request_id,
-                                (out.metadata or {}).get("replica_bindings"),
-                            )
-                            self.active_requests.add(out.request_id)
+                        if stream_run:
+                            await self.route_stream_run(stream_run)
+                            stream_run = []
                         else:
                             pass
-                    elif out.type == "kv_transfer":
-                        if out.request_id in self.active_requests:
-                            self.launch_kv_transfer(out.data)
-                        else:
-                            self.discard_kv_transfer(out.data)
-                    elif out.request_id in self.active_requests:
-                        if out.type == "result":
-                            # NOTE 将结果传递到下游
-                            await self.route_result(out.request_id, out.data)
-                        elif out.type == "stream":
-                            if self.stream_targets:
-                                await asyncio.gather(
-                                    *(
-                                        self.send_stream_to_target(
-                                            out.request_id,
-                                            out.data,
-                                            target,
-                                            out.metadata,
-                                        )
-                                        for target in self.stream_targets
-                                    )
-                                )
-                            else:
-                                await self.send_stream_to_coordinator(
+                        if out.type == "admitted":
+                            if out.request_id not in self.aborted:
+                                self.record_replica_bindings(
                                     out.request_id,
-                                    out.data,
-                                    out.metadata,
+                                    (out.metadata or {}).get("replica_bindings"),
                                 )
-                        elif out.type == "error":
-                            await self.send_failure(out.request_id, str(out.data))
+                                self.active_requests.add(out.request_id)
+                            else:
+                                pass
+                        elif out.type == "kv_transfer":
+                            if out.request_id in self.active_requests:
+                                self.launch_kv_transfer(out.data)
+                            else:
+                                self.discard_kv_transfer(out.data)
+                        elif out.request_id in self.active_requests:
+                            if out.type == "result":
+                                # NOTE 将结果传递到下游
+                                await self.route_result(out.request_id, out.data)
+                            elif out.type == "stream":
+                                if self.stream_targets:
+                                    await asyncio.gather(
+                                        *(
+                                            self.send_stream_to_target(
+                                                out.request_id,
+                                                out.data,
+                                                target,
+                                                out.metadata,
+                                            )
+                                            for target in self.stream_targets
+                                        )
+                                    )
+                                else:
+                                    await self.send_stream_to_coordinator(
+                                        out.request_id,
+                                        out.data,
+                                        out.metadata,
+                                    )
+                            elif out.type == "error":
+                                await self.send_failure(out.request_id, str(out.data))
+                            else:
+                                pass
                         else:
                             pass
+
+                    if batch_index + 1 >= _OUTBOX_DRAIN_BATCH_SIZE:
+                        if stream_run:
+                            await self.route_stream_run(stream_run)
+                        else:
+                            pass
+                        await asyncio.sleep(0)
+                        break
                     else:
                         pass
 
-                if batch_index + 1 >= _OUTBOX_DRAIN_BATCH_SIZE:
-                    if stream_run:
-                        await self.route_stream_run(stream_run)
-                    else:
-                        pass
-                    await asyncio.sleep(0)
-                    break
-                else:
-                    pass
-
-                try:
-                    out = outbox.get_nowait()
-                except _queue_mod.Empty:
-                    if stream_run:
-                        await self.route_stream_run(stream_run)
-                    else:
-                        pass
-                    break
+                    try:
+                        out = outbox.get_nowait()
+                    except _queue_mod.Empty:
+                        if stream_run:
+                            await self.route_stream_run(stream_run)
+                        else:
+                            pass
+                        break
 
     async def route_stream_run(self, messages: list[OutgoingMessage]) -> None:
         """Route targeted stream messages in order, one dispatch per same-process run."""
-        local_target: str | None = None
-        local_chunks: list[LocalStreamChunk] = []
-        for out in messages:
-            if out.request_id not in self.active_requests:
-                continue
-            else:
-                pass
-            target = self.resolve_target_instance(out.request_id, out.target)
-            if target not in self.same_process_targets:
-                await self.send_local_stream_chunks(local_target, local_chunks)
-                local_target, local_chunks = None, []
-                await self.send_stream_to_target(
-                    out.request_id, out.data, out.target, out.metadata
-                )
-            elif target != local_target:
-                await self.send_local_stream_chunks(local_target, local_chunks)
-                local_target = target
-                local_chunks = [
-                    self.local_stream_chunk(
-                        out.request_id, target, out.data, out.metadata
+        with request_log_context(*(message.request_id for message in messages)):
+            local_target: str | None = None
+            local_chunks: list[LocalStreamChunk] = []
+            for out in messages:
+                if out.request_id not in self.active_requests:
+                    continue
+                else:
+                    pass
+                target = self.resolve_target_instance(out.request_id, out.target)
+                if target not in self.same_process_targets:
+                    await self.send_local_stream_chunks(local_target, local_chunks)
+                    local_target, local_chunks = None, []
+                    await self.send_stream_to_target(
+                        out.request_id, out.data, out.target, out.metadata
                     )
-                ]
-            else:
-                local_chunks.append(
-                    self.local_stream_chunk(
-                        out.request_id, target, out.data, out.metadata
+                elif target != local_target:
+                    await self.send_local_stream_chunks(local_target, local_chunks)
+                    local_target = target
+                    local_chunks = [
+                        self.local_stream_chunk(
+                            out.request_id, target, out.data, out.metadata
+                        )
+                    ]
+                else:
+                    local_chunks.append(
+                        self.local_stream_chunk(
+                            out.request_id, target, out.data, out.metadata
+                        )
                     )
-                )
-        await self.send_local_stream_chunks(local_target, local_chunks)
+            await self.send_local_stream_chunks(local_target, local_chunks)
 
     async def drain_outbox_follower(self) -> None:
         """Drain follower outbox without emitting external stage traffic."""
@@ -1545,125 +1557,127 @@ class Stage:
         
            NOTE 将结果传递给下一个 Stage 或者这本身就是 最后一个 stage 则将结果给到 Coordinator
         """
-        if not self.owns_external_io:
-            self.clear_request_state(request_id)
-            return
-        else:
-            pass
-        session_operation = (
-            find_session_operation(result.request.metadata)
-            if isinstance(result, StagePayload)
-            else None
-        )
-        if session_operation is not None and session_operation.operation != "append":
-            await self.control_plane.send_complete(
-                CompleteMessage(
-                    request_id=request_id,
-                    from_stage=self.name,
-                    success=True,
-                    result=result.data,
-                )
-            )
-            self.clear_request_state(request_id)
-            return
-        else:
-            pass
-        if session_operation is not None:
-            owners = session_operation.stages
-            if self.name not in owners or self.stream_targets:
-                await self.send_failure(
-                    request_id, "session route must use fixed, linear payload edges"
-                )
+        with request_log_context(request_id):
+            logger.info(f"Stage 结果就绪，准备转发：stage={self.name}")
+            if not self.owns_external_io:
+                self.clear_request_state(request_id)
                 return
             else:
                 pass
-            index = owners.index(self.name)
-            if index + 1 < len(owners):
-                expected = self.logical_source(owners[index + 1])
-            else:
-                expected = None
-            actual = self.get_next(request_id, result)
-            if isinstance(actual, list) and len(actual) == 1:
-                actual_target = actual[0]
-            else:
-                actual_target = actual
-            if actual_target != expected:
-                await self.send_failure(
-                    request_id, "session route differs from the stage payload route"
+            session_operation = (
+                find_session_operation(result.request.metadata)
+                if isinstance(result, StagePayload)
+                else None
+            )
+            if session_operation is not None and session_operation.operation != "append":
+                await self.control_plane.send_complete(
+                    CompleteMessage(
+                        request_id=request_id,
+                        from_stage=self.name,
+                        success=True,
+                        result=result.data,
+                    )
                 )
+                self.clear_request_state(request_id)
                 return
             else:
                 pass
-        else:
-            pass
-        # Send stream done to the active stream targets for this request.
-        stream_targets = self.stream_targets
-        if self.get_stream_done_targets is not None:
-            resolved = self.get_stream_done_targets(request_id, result)
-            if isinstance(resolved, str):
-                stream_targets = [resolved]
-            elif isinstance(resolved, list):
-                stream_targets = resolved
-            elif resolved is None:
-                stream_targets = []
+            if session_operation is not None:
+                owners = session_operation.stages
+                if self.name not in owners or self.stream_targets:
+                    await self.send_failure(
+                        request_id, "session route must use fixed, linear payload edges"
+                    )
+                    return
+                else:
+                    pass
+                index = owners.index(self.name)
+                if index + 1 < len(owners):
+                    expected = self.logical_source(owners[index + 1])
+                else:
+                    expected = None
+                actual = self.get_next(request_id, result)
+                if isinstance(actual, list) and len(actual) == 1:
+                    actual_target = actual[0]
+                else:
+                    actual_target = actual
+                if actual_target != expected:
+                    await self.send_failure(
+                        request_id, "session route differs from the stage payload route"
+                    )
+                    return
+                else:
+                    pass
             else:
                 pass
-        else:
-            pass
-        stream_targets_for_request = set(stream_targets)
-        for target in stream_targets:
-            await self.send_stream_signal_to_target(
-                request_id,
-                target,
-                is_done=True,
-            )
-
-        # NOTE 获取当前 stage 的下一个stage
-        next_stages = (
-            self.get_next(request_id, result) if session_operation is None else actual
-        )
-        if next_stages is None:
-            # NOTE 最终阶段，给到结果 coordinator
-            # Terminal: notify coordinator
-            _emit_event(
-                request_id=request_id,
-                stage=self.name,
-                event_name="stage_complete",
-                metadata={"terminal": True},
-            )
-            # NOTE 发送消息给到 coordinator
-            await self.control_plane.send_complete(
-                CompleteMessage(
-                    request_id=request_id,
-                    from_stage=self.name,
-                    success=True,
-                    result=result.data if isinstance(result, StagePayload) else result,
-                )
-            )
-        else:
-            if isinstance(next_stages, str):
-                next_stages = [next_stages]
+            # Send stream done to the active stream targets for this request.
+            stream_targets = self.stream_targets
+            if self.get_stream_done_targets is not None:
+                resolved = self.get_stream_done_targets(request_id, result)
+                if isinstance(resolved, str):
+                    stream_targets = [resolved]
+                elif isinstance(resolved, list):
+                    stream_targets = resolved
+                elif resolved is None:
+                    stream_targets = []
+                else:
+                    pass
             else:
                 pass
-            is_single_target = len(next_stages) == 1
-            _emit_event(
-                request_id=request_id,
-                stage=self.name,
-                event_name="stage_complete",
-                metadata={"terminal": False, "next": list(next_stages)},
-            )
-            # 发送消息给到后边的 stage
-            for target in next_stages:
-                await self.send_to_stage(
+            stream_targets_for_request = set(stream_targets)
+            for target in stream_targets:
+                await self.send_stream_signal_to_target(
                     request_id,
                     target,
-                    result,
-                    allow_local_object=is_single_target,
-                    allow_projected_local_object=not is_single_target,
-                    stream_targets_for_request=stream_targets_for_request,
+                    is_done=True,
                 )
 
-        self.clear_request_state(request_id)
+            # NOTE 获取当前 stage 的下一个stage
+            next_stages = (
+                self.get_next(request_id, result) if session_operation is None else actual
+            )
+            if next_stages is None:
+                # NOTE 最终阶段，给到结果 coordinator
+                # Terminal: notify coordinator
+                _emit_event(
+                    request_id=request_id,
+                    stage=self.name,
+                    event_name="stage_complete",
+                    metadata={"terminal": True},
+                )
+                # NOTE 发送消息给到 coordinator
+                await self.control_plane.send_complete(
+                    CompleteMessage(
+                        request_id=request_id,
+                        from_stage=self.name,
+                        success=True,
+                        result=result.data if isinstance(result, StagePayload) else result,
+                    )
+                )
+            else:
+                if isinstance(next_stages, str):
+                    next_stages = [next_stages]
+                else:
+                    pass
+                is_single_target = len(next_stages) == 1
+                _emit_event(
+                    request_id=request_id,
+                    stage=self.name,
+                    event_name="stage_complete",
+                    metadata={"terminal": False, "next": list(next_stages)},
+                )
+                # 发送消息给到后边的 stage
+                for target in next_stages:
+                    await self.send_to_stage(
+                        request_id,
+                        target,
+                        result,
+                        allow_local_object=is_single_target,
+                        allow_projected_local_object=not is_single_target,
+                        stream_targets_for_request=stream_targets_for_request,
+                    )
+
+            self.clear_request_state(request_id)
 
     async def send_to_stage(
         self,

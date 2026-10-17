@@ -1600,142 +1600,144 @@ class OmniScheduler(Generic[RequestDataT]):
         *,
         request_admission_lock_held: bool = False,
     ) -> None:
-        logger.info("请求入队\n%s",
-            json.dumps({"request_id": payload.request_id, "input_type": type(payload.request.inputs).__name__, "param_keys": list(payload.request.params)}, ensure_ascii=False, indent=2))
-        req_id = payload.request_id
-        self.deferred_request_payloads.pop(req_id, None)
-        session_unit = self.active_session_unit(req_id)
-        if session_unit is not None:
-            bridge = self.session_bridge
-            assert bridge is not None
-            try:
-                bridge.create_session_request(payload, req_data)
-            except ValueError as exc:
-                bridge.release_append_unit(req_id)
-                self.abort(req_id)
-                self.emit_request_error(req_id, exc)
-                return
-            except Exception:
-                bridge.release_append_unit(req_id)
-                self.abort(req_id)
-                raise
-        else:
-            pass
-        req = req_data.req
-        self.normalize_req_token_arrays(req)
-        req_id = req.rid
-        # Session appends are checked after history restore, as SGLang does.
-        if not req.origin_input_ids:
-            self.emit_request_error(
-                req_id,
-                ValueError(
-                    "Request has no prompt tokens after preprocessing. "
-                    "Send input that tokenizes to at least one token."
-                ),
-            )
-            self.abort(req_id)
-            return
-        else:
-            pass
-        if req_data.enforce_request_limits:
-            error_msg = self.prepare_request_limits(req_data)
-            if error_msg:
-                if session_unit is not None:
-                    error = ContextExhaustedError(
-                        f"{ContextExhaustedError.CODE}: the session reached the "
-                        f"thinker context length of {self.model_config.context_len} "
-                        f"tokens (the next unit needs {len(req.origin_input_ids)} "
-                        f"tokens, limit {self.max_req_input_len}). "
-                        "Start a new session."
-                    )
-                else:
-                    error = ValueError(error_msg)
-                self.emit_request_error(req_id, error)
-                self.abort(req_id)
-                return
+        """请求构建线程完成后，恢复入队操作的请求日志上下文。"""
+        with request_log_context(payload.request_id):
+            logger.info("请求入队\n%s",
+                json.dumps({"request_id": payload.request_id, "input_type": type(payload.request.inputs).__name__, "param_keys": list(payload.request.params)}, ensure_ascii=False, indent=2))
+            req_id = payload.request_id
+            self.deferred_request_payloads.pop(req_id, None)
+            session_unit = self.active_session_unit(req_id)
+            if session_unit is not None:
+                bridge = self.session_bridge
+                assert bridge is not None
+                try:
+                    bridge.create_session_request(payload, req_data)
+                except ValueError as exc:
+                    bridge.release_append_unit(req_id)
+                    self.abort(req_id)
+                    self.emit_request_error(req_id, exc)
+                    return
+                except Exception:
+                    bridge.release_append_unit(req_id)
+                    self.abort(req_id)
+                    raise
             else:
                 pass
-        else:
-            pass
-        session_unit = self.active_session_unit(req_id)
-        if session_unit is not None:
-            bridge = self.session_bridge
-            assert bridge is not None
-            capacity_message = bridge.check_session_capacity(req_id)
-            if capacity_message is not None:
-                self.emit_request_error(req_id, ValueError(capacity_message))
-                bridge.release_append_unit(req_id)
-                self.abort(req_id)
-                return
-            else:
-                pass
-        else:
-            pass
-        kv_error = self.request_kv_capacity_error(req)
-        if kv_error is not None:
-            logger.warning(f"Rejecting request {req_id} before scheduling: {kv_error}")
-            self.emit_request_error(req_id, ValueError(kv_error))
-            self.abort(req_id)
-            return
-        else:
-            pass
-        self.initialize_request_stream_state(req_data, payload)
-        ingress = self.pending_stream_ingress.pop(req_id, None)
-        if ingress is not None:
-            for chunk in ingress.chunks:
-                self.append_stream_chunk(req_data, chunk)
-            if ingress.done and not pending_stream_done:
-                self.mark_stream_done(req_data)
-            else:
-                pass
-        else:
-            pass
-
-        def enqueue_if_live() -> None:
-            if req_id in self.aborted_request_ids:
-                return
-            else:
-                pass
-            # note (guozhihao): Priority defaulting must run before the queued-limit abort.
-            if not self._set_or_validate_priority(req):  # noqa: leading-underscore
-                return
-            else:
-                pass
-            if self._abort_on_queued_limit(req):  # noqa: leading-underscore
-                logger.warning(
-                    "Rejecting request %s: waiting queue is full "
-                    "(max_queued_requests=%s, waiting=%s)",
+            req = req_data.req
+            self.normalize_req_token_arrays(req)
+            req_id = req.rid
+            # Session appends are checked after history restore, as SGLang does.
+            if not req.origin_input_ids:
+                self.emit_request_error(
                     req_id,
-                    self.max_queued_requests,
-                    len(self.waiting_queue),
+                    ValueError(
+                        "Request has no prompt tokens after preprocessing. "
+                        "Send input that tokenizes to at least one token."
+                    ),
                 )
+                self.abort(req_id)
                 return
             else:
                 pass
-            self.apply_prompt_cache_epoch(req)
-            _emit_event(
-                request_id=req_id,
-                stage=None,
-                event_name="scheduler_queue_enter",
-            )
-            req._coalesce_enqueue_t = (
-                time.perf_counter()
-            )  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
-            req._omni_terminal_claimed = False  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
-            req.omni_data = req_data  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
-            self.waiting_queue.append(req)
-            logger.info("请求入队成功\nrequest_id=%s, waiting_queue_size=%s", req_id, len(self.waiting_queue))
-            enqueued_unit = self.active_session_unit(req_id)
-            if enqueued_unit is not None:
-                enqueued_unit.is_enqueued = True
+            if req_data.enforce_request_limits:
+                error_msg = self.prepare_request_limits(req_data)
+                if error_msg:
+                    if session_unit is not None:
+                        error = ContextExhaustedError(
+                            f"{ContextExhaustedError.CODE}: the session reached the "
+                            f"thinker context length of {self.model_config.context_len} "
+                            f"tokens (the next unit needs {len(req.origin_input_ids)} "
+                            f"tokens, limit {self.max_req_input_len}). "
+                            "Start a new session."
+                        )
+                    else:
+                        error = ValueError(error_msg)
+                    self.emit_request_error(req_id, error)
+                    self.abort(req_id)
+                    return
+                else:
+                    pass
+            else:
+                pass
+            session_unit = self.active_session_unit(req_id)
+            if session_unit is not None:
+                bridge = self.session_bridge
+                assert bridge is not None
+                capacity_message = bridge.check_session_capacity(req_id)
+                if capacity_message is not None:
+                    self.emit_request_error(req_id, ValueError(capacity_message))
+                    bridge.release_append_unit(req_id)
+                    self.abort(req_id)
+                    return
+                else:
+                    pass
+            else:
+                pass
+            kv_error = self.request_kv_capacity_error(req)
+            if kv_error is not None:
+                logger.warning(f"Rejecting request {req_id} before scheduling: {kv_error}")
+                self.emit_request_error(req_id, ValueError(kv_error))
+                self.abort(req_id)
+                return
+            else:
+                pass
+            self.initialize_request_stream_state(req_data, payload)
+            ingress = self.pending_stream_ingress.pop(req_id, None)
+            if ingress is not None:
+                for chunk in ingress.chunks:
+                    self.append_stream_chunk(req_data, chunk)
+                if ingress.done and not pending_stream_done:
+                    self.mark_stream_done(req_data)
+                else:
+                    pass
             else:
                 pass
 
-        if request_admission_lock_held:
-            enqueue_if_live()
-        else:
-            with self.request_admission_lock:
+            def enqueue_if_live() -> None:
+                if req_id in self.aborted_request_ids:
+                    return
+                else:
+                    pass
+                # note (guozhihao): Priority defaulting must run before the queued-limit abort.
+                if not self._set_or_validate_priority(req):  # noqa: leading-underscore
+                    return
+                else:
+                    pass
+                if self._abort_on_queued_limit(req):  # noqa: leading-underscore
+                    logger.warning(
+                        "Rejecting request %s: waiting queue is full "
+                        "(max_queued_requests=%s, waiting=%s)",
+                        req_id,
+                        self.max_queued_requests,
+                        len(self.waiting_queue),
+                    )
+                    return
+                else:
+                    pass
+                self.apply_prompt_cache_epoch(req)
+                _emit_event(
+                    request_id=req_id,
+                    stage=None,
+                    event_name="scheduler_queue_enter",
+                )
+                req._coalesce_enqueue_t = (
+                    time.perf_counter()
+                )  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+                req._omni_terminal_claimed = False  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+                req.omni_data = req_data  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
+                self.waiting_queue.append(req)
+                logger.info("请求入队成功\nrequest_id=%s, waiting_queue_size=%s", req_id, len(self.waiting_queue))
+                enqueued_unit = self.active_session_unit(req_id)
+                if enqueued_unit is not None:
+                    enqueued_unit.is_enqueued = True
+                else:
+                    pass
+
+            if request_admission_lock_held:
                 enqueue_if_live()
+            else:
+                with self.request_admission_lock:
+                    enqueue_if_live()
 
     def apply_prompt_cache_epoch(self, req: Req) -> None:
         cache_key = getattr(
@@ -1897,8 +1899,11 @@ class OmniScheduler(Generic[RequestDataT]):
         #   import Scheduler as _Upstream
         plan = _Upstream.get_next_batch_to_run(self, running_batch, self.last_batch)
         if plan.batch_to_run is not None:
-            logger.info("组批结果\n%s",
-                json.dumps({"batch_size": len(plan.batch_to_run.reqs), "running_size": len(plan.running_batch.reqs), "waiting_size": len(self.waiting_queue)}, ensure_ascii=False, indent=2))
+            with request_log_context(*(request.rid for request in plan.batch_to_run.reqs)):
+                logger.info(
+                    f"组批完成：batch_size={len(plan.batch_to_run.reqs)}, "
+                    f"running_size={len(plan.running_batch.reqs)}, waiting_size={len(self.waiting_queue)}"
+                )
         else:
             pass
         self.running_batch = plan.running_batch
@@ -3283,15 +3288,14 @@ class OmniScheduler(Generic[RequestDataT]):
             self.process_admin_requests()
             recv_reqs = self.recv_requests()
             if recv_reqs:
-                request_fields = [{"request_id": payload.request_id,
-                    "input_type": type(payload.request.inputs).__name__, "param_keys": list(payload.request.params)} for payload in recv_reqs]
-                logger.info("收到请求\n%s",
-                    json.dumps(request_fields, ensure_ascii=False, indent=2))
+                with request_log_context(*(payload.request_id for payload in recv_reqs)):
+                    logger.info(f"调度器收到请求：count={len(recv_reqs)}")
             else:
                 pass
             recv_reqs.extend(self.take_deferred_request_payloads())
             # NOTE 请求入队列
-            self.process_input_requests(recv_reqs)
+            with request_log_context(*(payload.request_id for payload in recv_reqs)):
+                self.process_input_requests(recv_reqs)
             if self._engine_paused:  # noqa: leading-underscore
                 self.process_admin_requests()
                 time.sleep(0.001)
@@ -3607,7 +3611,8 @@ class OmniScheduler(Generic[RequestDataT]):
             self.process_admin_requests()
             recv_reqs = self.recv_requests()
             recv_reqs.extend(self.take_deferred_request_payloads())
-            self.process_input_requests(recv_reqs)
+            with request_log_context(*(payload.request_id for payload in recv_reqs)):
+                self.process_input_requests(recv_reqs)
             if self._engine_paused:  # noqa: leading-underscore
                 self.process_admin_requests()
                 self.resolve_pending_async()

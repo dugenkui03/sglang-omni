@@ -13,6 +13,7 @@
         <script src="/static/controls.js" defer></script>
         <script src="/static/views.js" defer></script>
         <script src="/static/requests.js" defer></script>
+        <script src="/static/log_search.js" defer></script>
         <script src="/static/app.js" defer></script>
     </head>
     <body>
@@ -456,7 +457,7 @@
                                 <div>
                                     <h3 id="log-heading">TTS 服务日志</h3>
                                     <span id="log-source" class="muted small"
-                                        >只读跟随日志文件</span
+                                        >搜索归档历史 · 默认折叠完整记录</span
                                     >
                                 </div>
                                 <div class="toolbar-actions">
@@ -468,8 +469,8 @@
                                     >
                                         最大化
                                     </button>
-                                    <button class="text-button" id="pause-log">
-                                        暂停获取</button
+                                    <button class="text-button" id="refresh-log">
+                                        刷新搜索</button
                                     ><button class="text-button" id="copy-log">
                                         复制
                                     </button>
@@ -497,7 +498,7 @@
                                     autocomplete="off"
                                 />
                                 <button type="submit" class="button quiet">
-                                    筛选
+                                    搜索
                                 </button>
                                 <button
                                     type="button"
@@ -517,43 +518,20 @@
                                 >
                             </form>
                             <div class="log-tools">
-                                <span id="log-live-dot" class="live-dot"></span
-                                ><span id="log-status">实时跟随</span>
-                                <label class="log-limit-label" for="log-limit"
-                                    >显示行数
-                                    <input
-                                        id="log-limit"
-                                        type="number"
-                                        min="1"
-                                        max="30000"
-                                        step="1"
-                                        value="2000"
-                                    />
+                                <label>关键字 <input id="log-filter" form="log-request-form" placeholder="搜索全部保留历史，支持中文" maxlength="200" /></label>
+                                <label>代码位置 <input id="log-location" form="log-request-form" placeholder="如 sglang_model.py:315 或文件名" maxlength="200" /></label>
+                                <label class="log-limit-label" for="log-limit">每页行数上限
+                                    <input id="log-limit" type="number" min="1" max="30000" value="2000" />
                                 </label>
-                                <input
-                                    id="log-filter"
-                                    placeholder="全文关键词（查询全部历史）…"
-                                    maxlength="200"
-                                    aria-label="过滤日志"
-                                />
                             </div>
-                            <pre
-                                id="log-output"
-                                class="log-output"
-                                tabindex="0"
-                            >
-正在读取服务日志…</pre
-                            >
-                            <div class="log-footnote">
-                                <span id="log-window-count"
-                                    >默认显示最近 2,000 行，最多 30,000 行。</span
-                                >
-                                SQLite
-                                保存完整日志；原始文件和日志归档不受清理测试结果影响。
-                                <span id="log-truncation" hidden
-                                    >窗口已截取；下载可查看该请求全部日志。</span
-                                >
+                            <div class="log-search-status" id="log-status" role="status">点击搜索查看日志，不自动刷新。</div>
+                            <div id="log-output" class="log-output" tabindex="0"></div>
+                            <div class="log-pagination">
+                                <span id="log-window-count"></span>
+                                <button id="log-previous" class="button quiet" disabled>上一页</button>
+                                <button id="log-next" class="button quiet" disabled>下一页</button>
                             </div>
+                            <div class="log-footnote">按最新记录优先展示；每页最多 100 条完整记录。点击代码位置继续筛选，点击请求 ID 查看该请求链路。SQLite 仅保留最近 20,000,000 行，按完整记录清理；更早的日志不在搜索和下载范围内。</div>
                         </section>
                     </div>
                 </div>

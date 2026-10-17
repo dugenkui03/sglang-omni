@@ -16,6 +16,14 @@ function harness() {
         logLoading: false,
         logError: "",
         logMatchedLines: null,
+        logResult: null,
+        logSnapshot: null,
+        logBefore: null,
+        logPages: [],
+        logRequestId: "",
+        logScope: "all",
+        logKeyword: "",
+        logLocation: "",
         rows: [],
     };
     /** Resolve a stable element so asynchronous responses affect the same view. */
@@ -50,7 +58,7 @@ function harness() {
             },
         },
     });
-    for (const file of ["views.js", "controls.js", "requests.js"]) {
+    for (const file of ["charts.js", "views.js", "controls.js", "requests.js", "log_search.js"]) {
         vm.runInContext(
             fs.readFileSync(
                 path.join(__dirname, "../tts_workbench/static", file),
@@ -61,62 +69,6 @@ function harness() {
     }
     return { state, element, context };
 }
-
-test("pause stops new log fetches and ignores an already pending response", async () => {
-    const { state, element, context } = harness();
-    let calls = 0,
-        resolve;
-    context.api = () => {
-        calls += 1;
-        return new Promise((done) => {
-            resolve = done;
-        });
-    };
-    state.logText = "frozen\n";
-    element("log-output").textContent = "frozen\n";
-    const pending = context.refreshLogs();
-    context.toggleLogFetching();
-    await context.refreshLogs();
-    assert.equal(calls, 1);
-    resolve({
-        source: "server.log",
-        cursor: "next",
-        text: "must not appear\n",
-        reset: true,
-    });
-    await pending;
-    assert.equal(element("log-output").textContent, "frozen\n");
-    assert.equal(state.logText, "frozen\n");
-    assert.equal(element("pause-log").textContent, "恢复获取");
-    context.toggleLogFetching();
-    assert.equal(state.logsPaused, false);
-    assert.equal(state.logCursor, null);
-});
-
-test("log window defaults to 2000 rows and supports up to 30000 while paused", () => {
-    const { state, element, context } = harness();
-    state.logText = Array.from(
-        { length: 35000 },
-        (_, index) => `row ${index}\n`,
-    ).join("");
-    context.trimLogWindow();
-    assert.equal(state.logText.split("\n").length - 1, 2000);
-    state.logsPaused = true;
-    element("log-limit").value = "40000";
-    context.updateLogLimit();
-    assert.equal(state.logLineLimit, 30000);
-    state.logText = Array.from(
-        { length: 35000 },
-        (_, index) => `row ${index}\n`,
-    ).join("");
-    context.trimLogWindow();
-    assert.equal(state.logText.split("\n").length - 1, 30000);
-    assert.match(state.logText, /^row 5000\n/);
-    element("log-limit").value = "12";
-    context.updateLogLimit();
-    assert.equal(state.logText.split("\n").length - 1, 12);
-    assert.match(state.logText, /^row 34988\n/);
-});
 
 test("listen plays the result immediately without opening details", () => {
     const { state, element, context } = harness();
@@ -140,43 +92,6 @@ test("listen plays the result immediately without opening details", () => {
     assert.equal(element("result-player").hidden, false);
 });
 
-test("keyword matching keeps the whole multiline log record", () => {
-    const { state, element, context } = harness();
-    const first =
-        "[02:00:47] INFO\n  request_id=speech-a\n  model.py:315\n    方法：forward()\n      内容：attention\n\n";
-    const second =
-        "[02:00:48] INFO\n  request_id=speech-b\n  other.py:8\n    内容：other\n\n";
-    state.logText = first + second;
-    element("log-filter").value = "speech-a";
-    context.renderLogs();
-    assert.equal(element("log-output").textContent, first);
-    state.logRequestId = "speech-a";
-    state.logMatchedLines = 12;
-    state.logLineLimit = 7;
-    context.trimLogWindow();
-    assert.equal(state.logText, second);
-    assert.equal(state.logTruncated, true);
-});
-
-test("changing request filter while paused never fetches and aborts stale responses", () => {
-    const { state, element, context } = harness();
-    state.logsPaused = true;
-    state.logController = new AbortController();
-    let calls = 0;
-    context.poll = () => {
-        calls += 1;
-    };
-    element("log-request-id").value = " speech-a ";
-    context.updateLogDownload();
-    assert.equal(element("download-request-log").disabled, false);
-    assert.equal(calls, 0);
-    context.applyLogRequestFilter();
-    assert.equal(state.logRequestId, "speech-a");
-    assert.equal(state.logController.signal.aborted, true);
-    assert.equal(calls, 0);
-    assert.equal(element("download-request-log").disabled, false);
-});
-
 test("automatic names stay previews while edits survive a pending name fetch", async () => {
     const { state, element, context } = harness();
     let resolve;
@@ -196,42 +111,58 @@ test("automatic names stay previews while edits survive a pending name fetch", a
     assert.equal(state.generatedRunName, "model-002");
 });
 
-test("pending full-history searches show progress and report archived match counts", async () => {
-    const { state, element, context } = harness();
-    state.logRequestId = "speech-a";
-    let resolve;
-    context.api = () =>
-        new Promise((done) => {
-            resolve = done;
-        });
-    const pending = context.refreshLogs();
-    assert.match(element("log-output").textContent, /正在检索/);
-    resolve({
-        source: "server.log",
-        cursor: "next",
-        text: "",
-        reset: true,
-        matched_lines: 25000,
-        truncated: true,
-    });
-    await pending;
-    assert.equal(state.logLoading, false);
-    assert.match(element("log-window-count").textContent, /25000/);
+
+test("search combines all filters and renders collapsed escaped records without scrolling", async () => {
+    const {state, element, context} = harness();
+    element("log-request-id").value = " speech-a ";
+    element("log-filter").value = "attention";
+    element("log-location").value = "model.py:315";
+    element("log-output").scrollTop = 45;
+    let query;
+    context.api = async path => {
+        query = path;
+        return {records:[{id:7,time:"12:00:00",level:"INFO",location:"model.py:315",method:"forward()",summary:"<script>attention</script>",request_ids:["speech-a"],line_count:6,text:'[12:00:00] INFO\n  {"value":12}\n'}],snapshot:7,next_before:null,matched_records:1,matched_lines:6,retained_lines:6};
+    };
+    context.applyLogRequestFilter();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(query,/request_id=speech-a/);
+    assert.match(query,/keyword=attention/);
+    assert.match(query,/location=model.py%3A315/);
+    assert.match(element("log-output").innerHTML, /<details class="log-record">/);
+    assert.doesNotMatch(element("log-output").innerHTML, /<script>|<details[^>]+open/);
+    assert.match(element("log-output").innerHTML,/data-log-request="speech-a"/);
+    assert.equal(element("log-output").scrollTop,45);
+    assert.equal(state.logSnapshot,7);
+    assert.match(context.formatLogText('{"value":12}'), /\n  "value": 12\n/);
 });
 
-test("a failed log query reports its error and stops automatic retry storms", async () => {
-    const { state, element, context } = harness();
-    let calls = 0;
-    context.api = async () => {
-        calls += 1;
-        const error = new Error("deadline");
-        error.name = "TimeoutError";
-        throw error;
-    };
+test("new search aborts stale response and keeps the latest result", async () => {
+    const {state, element, context} = harness();
+    const resolvers=[];
+    context.api = () => new Promise(resolve => resolvers.push(resolve));
+    const first=context.refreshLogs();
+    const second=context.refreshLogs();
+    const page={records:[],snapshot:22,next_before:null,matched_records:0,matched_lines:0,retained_lines:100};
+    resolvers[1](page);
+    await second;
+    resolvers[0]({...page,snapshot:11});
+    await first;
+    assert.equal(state.logSnapshot,22);
+    assert.equal(state.logController,null);
+    assert.match(element("log-status").textContent,/不自动刷新/);
+});
+
+test("log line budget is bounded and a search failure does not schedule retries", async () => {
+    const {state,element,context}=harness();
+    element("log-limit").value="40000";
+    context.updateLogLimit();
+    assert.equal(state.logLineLimit,30000);
+    element("log-limit").value="12";
+    context.updateLogLimit();
+    assert.equal(state.logLineLimit,12);
+    let calls=0;
+    context.api=async () => {calls++;throw new Error("deadline");};
     await context.refreshLogs();
-    await context.refreshLogs();
-    assert.equal(calls, 1);
-    assert.equal(state.logsPaused, true);
-    assert.match(element("log-output").textContent, /检索超时/);
-    assert.doesNotMatch(element("log-output").textContent, /暂无匹配/);
+    assert.equal(calls,1);
+    assert.match(element("log-status").textContent,/搜索失败/);
 });

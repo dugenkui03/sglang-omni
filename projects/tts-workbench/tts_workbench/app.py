@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from tts_workbench.config import RunConfig, Settings
 from tts_workbench.dataset import DataCatalog, Dataset
+from tts_workbench.log_search import LogSearchPage, search_log_history
 from tts_workbench.monitor import (
     DEFAULT_LOG_LINES,
     MAX_LOG_LINES,
@@ -418,6 +419,33 @@ def create_app(settings: Settings) -> FastAPI:
         return await asyncio.to_thread(
             runtime_from(request).logs.tail, cursor, request_id, limit, scope, keyword
         )
+
+    @app.get("/api/workbench/logs/search")
+    async def search_logs(
+        request: Request,
+        request_id: str = Query("", max_length=200),
+        keyword: str = Query("", max_length=200),
+        location: str = Query("", max_length=200),
+        scope: Literal["all", "system", "inference"] = "all",
+        limit: int = Query(DEFAULT_LOG_LINES, ge=1, le=MAX_LOG_LINES),
+        snapshot: int | None = Query(None, ge=0),
+        before: int | None = Query(None, ge=1),
+    ) -> LogSearchPage:
+        """查询归档中的完整日志记录，并用快照固定分页结果。"""
+        archive = runtime_from(request).logs
+        page = await asyncio.to_thread(
+            search_log_history,
+            archive.database_path,
+            request_id.strip(),
+            keyword.strip(),
+            location.strip(),
+            scope,
+            limit,
+            snapshot,
+            before,
+        )
+        page.warning = archive.error
+        return page
 
     @app.get("/api/workbench/logs/download")
     async def download_logs(

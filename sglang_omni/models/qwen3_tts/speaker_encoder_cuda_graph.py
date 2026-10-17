@@ -173,7 +173,7 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
         result = torch.log(
             torch.clamp(torch.matmul(self.mel_basis, magnitude), min=SPEAKER_MEL_CLIP)
         )
-        logger.info(f"Log-mel spectrogram computed\n{json_for_log(result)}")
+        logger.info(f"对数梅尔频谱计算完成\n{json_for_log(result)}")
         return result
 
     def capture(self, codec_frame_buckets: Iterable[int], codec_hop: int) -> None:

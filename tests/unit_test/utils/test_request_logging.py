@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import Thread
 
 import numpy as np
 import pytest
@@ -16,6 +17,8 @@ from fastapi.testclient import TestClient
 from starlette.types import Message, Receive, Scope, Send
 
 from sglang_omni.http.request_logging import RequestLoggingApp
+from sglang_omni.scheduling.message import IncomingMessage
+from sglang_omni.scheduling.simple_scheduler import SimpleScheduler
 from sglang_omni.scheduling.threaded_simple_scheduler import ThreadedSimpleScheduler
 from sglang_omni.utils.logging import (
     DebugLogFormatter,
@@ -30,7 +33,7 @@ from sglang_omni.utils.request_context import current_request_label, request_log
     ["data", "audio", "audio_path", "audio_base64", "ref_audio", "reference_audio"],
 )
 def test_encoded_audio_log_keeps_metadata_only(field_name: str) -> None:
-    """Nested reference payloads must not expose Base64, even with previews enabled."""
+    """验证嵌套参考音频即使开启预览也不会输出 Base64。"""
     encoded_audio = "UklGRkaWAABXQVZF" * 4096
     request = {"references": [{field_name: encoded_audio, "text": "参考台词"}]}
     rendered = json_for_log(request, preview_elements=5)
@@ -44,7 +47,7 @@ def test_encoded_audio_log_keeps_metadata_only(field_name: str) -> None:
 
 @pytest.mark.parametrize("source_kind", ["list", "numpy", "torch", "bytes"])
 def test_waveform_log_omits_samples(source_kind: str) -> None:
-    """Audio values stay hidden for each supported representation without mutation."""
+    """验证各种音频表示仅输出元信息且不修改原数据。"""
     waveform = {
         "list": [0.125] * 24000,
         "numpy": np.full(24000, 0.125, dtype=np.float32),
@@ -64,11 +67,11 @@ def test_waveform_log_omits_samples(source_kind: str) -> None:
 
 
 def test_reference_dataclass_log_preserves_core_fields() -> None:
-    """Normalize reference dataclasses without losing field-aware audio protection."""
+    """验证参考音频数据类保留核心字段且不会泄露音频数据。"""
 
     @dataclass
     class Reference:
-        """Represent the reference encoder's normalized input."""
+        """表示参考编码器的规范化输入。"""
 
         ref_audio: str
         ref_text: str
@@ -88,9 +91,63 @@ def test_reference_dataclass_log_preserves_core_fields() -> None:
 def formatted_log() -> str:
     """Exercise the production formatter using a normal, unchanged log record."""
     record = logging.LogRecord(
-        "test", logging.INFO, "model.py", 312, "Forward complete", (), None
+        "test", logging.INFO, "model.py", 312, "推理完成", (), None
     )
     return DebugLogFormatter().format(record)
+
+
+@pytest.mark.parametrize("concurrency", [1, 2])
+def test_simple_scheduler_restores_request_identity(concurrency: int) -> None:
+    """验证串行与并发计算线程中的请求 ID 不串线。"""
+
+    def compute(payload: str) -> str:
+        """从实际调度的计算函数中读取请求日志上下文。"""
+        return f"{payload}:{current_request_label()}"
+
+    scheduler = SimpleScheduler(compute, max_concurrency=concurrency)
+    thread = Thread(target=scheduler.start, daemon=True)
+    thread.start()
+    try:
+        for identifier in ("speech-one", "speech-two"):
+            scheduler.inbox.put(IncomingMessage(identifier, "new_request", identifier))
+        results = {scheduler.outbox.get(timeout=5).data for _ in range(2)}
+        assert results == {
+            "speech-one:request_id=speech-one",
+            "speech-two:request_id=speech-two",
+        }
+        assert current_request_label() == "request_id=-"
+    finally:
+        scheduler.stop()
+        thread.join(timeout=5)
+
+
+def test_simple_scheduler_batch_lists_all_request_ids() -> None:
+    """验证批量计算列出全部请求 ID，避免错误归属某个请求。"""
+
+    def compute(payload: str) -> str:
+        """提供调度器必需的单请求计算入口。"""
+        return current_request_label()
+
+    def compute_batch(payloads: list[str]) -> list[str]:
+        """读取批量计算共享的日志上下文并返回每个请求的结果。"""
+        return [current_request_label() for _ in payloads]
+
+    scheduler = SimpleScheduler(compute, batch_compute_fn=compute_batch)
+    loop = asyncio.new_event_loop()
+    try:
+        scheduler.run_batch(
+            [
+                IncomingMessage(identifier, "new_request", identifier)
+                for identifier in ("speech-one", "speech-two")
+            ],
+            loop,
+        )
+        assert (
+            scheduler.outbox.get_nowait().data == "request_ids=[speech-one, speech-two]"
+        )
+        assert current_request_label() == "request_id=-"
+    finally:
+        loop.close()
 
 
 @pytest.mark.parametrize(
@@ -122,7 +179,10 @@ def test_polling_access_filter(
 
 def test_request_line_batch_and_exception_cleanup() -> None:
     """Put identities on the second line and restore nested and failed contexts."""
-    assert formatted_log().splitlines()[1] == "  request_id=-"
+    rendered = formatted_log().splitlines()
+    assert rendered[1] == "  request_id=-"
+    assert rendered[3].startswith("    method：")
+    assert rendered[4] == "      msg：推理完成"
     with request_log_context("speech-parent"):
         assert formatted_log().splitlines()[1] == "  request_id=speech-parent"
         with (
