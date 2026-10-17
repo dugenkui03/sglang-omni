@@ -407,6 +407,7 @@ class Client:
         extra_params.pop("stream", None)
         request = replace(request, stream=False, extra_params=extra_params)
 
+        # NOTE 发起 TTS 请求
         async for chunk in self.generate(request, request_id=request_id):
             if chunk.audio_data is not None:
                 audio_chunks.append(chunk.audio_data)

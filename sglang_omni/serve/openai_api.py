@@ -1998,6 +1998,7 @@ async def await_speech_response(
     speed: float,
 ) -> SpeechResult:
     speech_task = asyncio.create_task(
+        # NOTE 发送请求
         client.speech(
             gen_req,
             request_id=request_id,
