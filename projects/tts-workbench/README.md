@@ -33,7 +33,7 @@ flowchart LR
     B["浏览器工作台"]
   end
   subgraph APP["服务器：projects/tts-workbench"]
-    A["FastAPI 与访问口令"]
+    A["FastAPI 与访问控制"]
     Q["QPM 调度器"]
     D["SQLite 与抽样 WAV"]
     M["GPU 与日志观察"]
@@ -78,7 +78,7 @@ uv run --frozen tts-workbench \
 
 如果本机直接连接远程 TTS HTTP 地址，GPU 和日志仍属于**运行工作台进程的主机**。要查看服务器资源，应把工作台也部署到对应 GPU 服务器。
 
-`--allow-unauthenticated-local` 只允许回环地址监听，也适用于服务器上的 SSH 转发入口。免登录启动时需移除进程的 `TTS_WORKBENCH_PASSWORD` 环境变量；公网或局域网监听需要访问口令。
+`--allow-unauthenticated-local` 只允许回环地址监听，也适用于服务器上的 SSH 转发入口。免登录启动时需移除进程的 `TTS_WORKBENCH_PASSWORD` 环境变量。公网或局域网监听默认需要访问口令，也可通过 `--allow-unauthenticated-public` 明确启用免登录直连。
 
 ## 服务器部署
 
@@ -147,7 +147,7 @@ uv --no-config pip install --python .venv/bin/python --no-deps \
 
 工作台自带独立 `tool.uv` 配置，避免继承父项目的模型依赖覆盖规则。镜像安装仍使用锁文件中的版本及包哈希，不修改模型虚拟环境。
 
-当前通过 SSH 转发访问，工作台只监听服务器回环地址，浏览器无需登录。后台启动时移除进程继承的旧工作台口令，按实际情况替换 TTS 地址和日志路径：
+通过 SSH 转发访问时，工作台只监听服务器回环地址，浏览器无需登录。后台启动时移除进程继承的旧工作台口令，按实际情况替换 TTS 地址和日志路径：
 
 ```bash
 nohup env -u TTS_WORKBENCH_PASSWORD .venv/bin/tts-workbench \
@@ -169,7 +169,23 @@ ssh -N -L 127.0.0.1:8081:127.0.0.1:8081 root@服务器地址
 
 然后直接访问 `http://127.0.0.1:8081`，无需用户名或密码。这个本机地址只是服务器工作台的访问入口，调度、TTS 请求、GPU 读取、日志读取和结果保存全部发生在服务器。SSH 连接断开只会断开页面访问，不会停止服务器上的测试任务；重新建立转发即可继续查看。
 
-如果以后需要公网或局域网直连，再设置 `TTS_WORKBENCH_PASSWORD`，移除免登录参数和 `env -u TTS_WORKBENCH_PASSWORD`，并将监听地址改为 `0.0.0.0`；用户名为 `workbench`。公网访问使用 HTTPS 反向代理。
+如果需要通过 `http://服务器公网IP:8081` 免登录直连，使用下面的启动方式，并在实例关联安全组中添加 TCP 8081 入站允许规则：
+
+```bash
+nohup env -u TTS_WORKBENCH_PASSWORD .venv/bin/tts-workbench \
+  --api-base http://127.0.0.1:8000 \
+  --data-dir ../../tts_test_data \
+  --results-dir ./results/server \
+  --log-file ../../logs/tts.log \
+  --host 0.0.0.0 \
+  --port 8081 \
+  --allow-unauthenticated-public \
+  > ./results/workbench.log 2>&1 &
+```
+
+该模式下，能连接 8081 的访问者可以发起测试、清理测试结果及读取工作台日志。安全组来源可按需要设置为访问端 IP/CIDR；来源 `0.0.0.0/0` 表示允许所有 IPv4 地址访问。
+
+如需口令访问，设置 `TTS_WORKBENCH_PASSWORD`，移除免登录参数和 `env -u TTS_WORKBENCH_PASSWORD`，并将监听地址改为 `0.0.0.0`；用户名为 `workbench`。需要 HTTPS 时可在工作台前部署反向代理。
 
 如 TTS 服务需要 Bearer Key，设置服务器环境变量 `TTS_API_KEY` 后启动。密钥只用于后端请求，不返回浏览器，也不写入任务配置。页面所有请求同源，目标 TTS 地址在进程启动时配置。
 

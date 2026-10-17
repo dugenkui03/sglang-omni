@@ -57,14 +57,22 @@ def main() -> None:
         action="store_true",
         help="Allow password-free loopback access for local use or SSH forwarding",
     )
+    parser.add_argument(
+        "--allow-unauthenticated-public",
+        action="store_true",
+        help="Explicitly allow password-free access on public listeners",
+    )
     arguments = parser.parse_args()
     password = os.environ.get(arguments.password_env)
     if not password and not (
-        arguments.allow_unauthenticated_local
-        and arguments.host in {"127.0.0.1", "localhost", "::1"}
+        arguments.allow_unauthenticated_public
+        or (
+            arguments.allow_unauthenticated_local
+            and arguments.host in {"127.0.0.1", "localhost", "::1"}
+        )
     ):
         parser.error(
-            f"Set {arguments.password_env}; public listeners always require a password"
+            f"Set {arguments.password_env} or explicitly enable password-free access"
         )
     else:
         pass
