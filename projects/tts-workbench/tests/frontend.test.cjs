@@ -162,7 +162,7 @@ test("search combines all filters and renders collapsed escaped records without 
     let query;
     context.api = async path => {
         query = path;
-        return {records:[{id:7,time:"12:00:00",level:"INFO",location:"model.py:315",method:"forward()",summary:"<script>attention</script>",request_ids:["speech-a"],line_count:6,text:'[12:00:00] INFO\n  {"value":12}\n'}],snapshot:7,page:1,total_pages:1,next_before:null,matched_records:1,matched_lines:6,retained_lines:6};
+        return {records:[{id:7,position:1,time:"12:00:00",level:"INFO",location:"model.py:315",method:"forward()",summary:"<script>attention</script>",request_ids:["speech-a"],line_count:6,text:'[12:00:00] INFO\n  {"value":12}\n'}],snapshot:7,page:1,total_pages:1,next_before:null,matched_records:1,matched_lines:6,retained_lines:6};
     };
     context.applyLogRequestFilter();
     await new Promise(resolve => setImmediate(resolve));
@@ -170,6 +170,7 @@ test("search combines all filters and renders collapsed escaped records without 
     assert.match(query,/keyword=attention/);
     assert.match(query,/location=model.py%3A315/);
     assert.match(element("log-output").innerHTML, /<details class="log-record">/);
+    assert.match(element("log-output").innerHTML, /class="log-position"[^>]*>1\/1<\/span>/);
     assert.doesNotMatch(element("log-output").innerHTML, /<script>|<details[^>]+open/);
     assert.match(element("log-output").innerHTML,/data-log-request="speech-a"/);
     assert.equal(element("log-output").scrollTop,45);

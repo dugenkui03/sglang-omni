@@ -22,6 +22,7 @@ class LogRecordView(BaseModel):
     """提供代码位置、请求 ID 和可展开的完整日志内容。"""
 
     id: int
+    position: int
     time: str
     level: str
     location: str
@@ -206,6 +207,7 @@ def search_log_history(
         selected_start = None
         last_start = (0, 0)
         cursor_page = None
+        record_positions: dict[int, int] = {}
         # 仅扫描时间、记录 ID 和行数，避免为跳页加载前面所有日志正文。
         for boundary in boundaries:
             if not page_records or (
@@ -215,6 +217,10 @@ def search_log_history(
                 total_pages += 1
                 page_records = page_lines = 0
                 last_start = (boundary["sort_seconds"], boundary["id"])
+                if before is None and total_pages <= page:
+                    record_positions.clear()
+                else:
+                    pass
                 if total_pages == page:
                     selected_start = last_start
                 else:
@@ -229,6 +235,14 @@ def search_log_history(
             page_lines += boundary["line_count"]
             matched_records += 1
             matched_lines += boundary["line_count"]
+            # 按完整匹配结果编号，仅保留待返回页的序号，兼容行数预算与游标分页。
+            if len(record_positions) < SEARCH_PAGE_RECORDS and (
+                (before is None and total_pages <= page)
+                or (before is not None and boundary["id"] < before)
+            ):
+                record_positions[boundary["id"]] = matched_records
+            else:
+                pass
         if before is not None:
             where += " AND records.id<?"
             parameters.append(before)
@@ -267,6 +281,7 @@ def search_log_history(
             records.append(
                 LogRecordView(
                     id=row["id"],
+                    position=record_positions[row["id"]],
                     time=header.group(1) if header else "",
                     level=header.group(2) if header else "SYSTEM",
                     location=row["location"],

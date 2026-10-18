@@ -85,7 +85,7 @@ function renderLogs() {
     element("log-output").innerHTML = records.length ? records.map(record => `
         <details class="log-record">
             <summary>
-                <span class="log-time">${escapeText(record.time)}<small>${escapeText(record.level)}</small></span>
+                <span class="log-time">${escapeText(record.time)}<small>${escapeText(record.level)} <span class="log-position" title="匹配的 ${count(state.logResult.matched_records)} 条记录中的第 ${count(record.position)} 条">${count(record.position)}/${count(state.logResult.matched_records)}</span></small></span>
                 <button class="log-link" data-log-location="${escapeText(record.location)}">${escapeText(record.location || "系统输出")}</button>
                 <span class="log-summary" title="${escapeText(record.summary)}">${escapeText(record.summary)}</span>
                 <span class="log-identities">${record.request_ids.length ? record.request_ids.map(id => `<button class="log-link" title="查看此请求全部日志" data-log-request="${escapeText(id)}">${escapeText(id)}</button>`).join("") : "无请求 ID"}</span>

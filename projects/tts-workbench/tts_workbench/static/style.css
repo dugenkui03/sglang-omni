@@ -1315,6 +1315,7 @@ body:has(#log-dialog[open]) {
 .log-time::before { content: '▸ '; color: #667fbb; }
 .log-record[open] .log-time::before { content: '▾ '; }
 .log-time small { display: block; color: #8998ad; margin-left: 13px; }
+.log-position { display: inline-block; max-width: 100%; font-size: 9px; overflow-wrap: anywhere; }
 .log-link { border: 0; background: none; color: #4569b6; text-align: left; padding: 0; font: inherit; cursor: pointer; overflow-wrap: anywhere; }
 .log-link:hover { text-decoration: underline; }
 .log-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

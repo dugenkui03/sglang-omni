@@ -425,6 +425,7 @@ def test_indexed_log_search_combines_filters_and_freezes_pages(tmp_path: Path) -
             archive.database_path, "speech-a", "注意力", "sglang_model.py:315", limit=6
         )
         assert page.matched_records == 3
+        assert page.records[0].position == 1
         assert page.matched_lines == 18
         assert page.records[0].request_ids == ["speech-a", "speech-b"]
         assert page.records[0].text == old
@@ -443,6 +444,7 @@ def test_indexed_log_search_combines_filters_and_freezes_pages(tmp_path: Path) -
             before=page.next_before,
         )
         assert second.matched_records == 3
+        assert second.records[0].position == 2
         assert second.records[0].id < page.records[0].id
         assert (
             search_log_history(archive.database_path, keyword="100%_ok").matched_records
@@ -551,11 +553,13 @@ def test_log_search_jumps_to_numbered_pages_in_a_frozen_result(
         ).json()
         assert middle["page"] == 35
         assert middle["matched_records"] == 3508
+        assert [row["position"] for row in middle["records"]] == list(range(3401, 3501))
         assert [row["id"] for row in middle["records"]] == list(range(108, 8, -1))
         last = client.get(
             "/api/workbench/logs/search", params={**query, "page": 44}
         ).json()
         assert last["page"] == 36
+        assert [row["position"] for row in last["records"]] == list(range(3501, 3509))
         assert [row["id"] for row in last["records"]] == list(range(8, 0, -1))
         assert last["next_before"] is None
         assert (
@@ -577,6 +581,11 @@ def test_log_page_boundaries_keep_oversized_records_whole(tmp_path: Path) -> Non
             for number in (1, 2, 3)
         ]
         assert [page.total_pages for page in pages] == [3, 3, 3]
+        assert [[record.position for record in page.records] for page in pages] == [
+            [1, 2],
+            [3],
+            [4, 5],
+        ]
         assert [[record.id for record in page.records] for page in pages] == [
             [5, 4],
             [3],
@@ -622,6 +631,8 @@ def test_log_time_sort_applies_before_pagination_and_survives_upgrade(
         assert first.records[-1].time == "12:01:39"
         assert last.records[0].time == "12:03:20"
         assert last.records[-1].time == "12:03:24"
+        assert [record.position for record in last.records] == list(range(201, 206))
+        assert newest.records[0].position == 1
         assert newest.records[0].id == last.records[-1].id
         with path.open("a") as stream:
             stream.write(
