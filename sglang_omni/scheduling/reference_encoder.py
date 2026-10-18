@@ -380,7 +380,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
 
         # 缓存对应的 key，包括 模型、调用参数等信息
         key = self._hook.cache_key(item)  # noqa: leading-underscore
-        logger.info("参考输入规范化完成，进入缓存或编码链路\n%s",
+        logger.info("预处理-进入缓存或编码链路\n%s",
             json_for_log({"desc": desc, "item": item, "cache_key": key}))
         if key is None: # 缓存key为null，不是缓存为null
             with self.lock:
