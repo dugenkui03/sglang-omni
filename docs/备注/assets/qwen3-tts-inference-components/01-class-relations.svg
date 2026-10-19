@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="787.8897637795277" height="360" preserveAspectRatio="xMinYMin meet" viewBox="0 0 787 360" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="787.8897637795277" height="360"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-360)" style="clip-path: url(#clip)">
+		<g transform="">
+			<text x="0" y="348" style="font-family: Arial Unicode MS; font-size: 11.4px;fill: rgb(12%,33%,60%); stroke:none;" transform="translate(0,696) scale(1,-1)">01  对象持有关系</text>
+			<text x="596.7897637795277" y="348" style="font-family: Arial Unicode MS; font-size: 9.1px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,696) scale(1,-1)">实线箭头：属性引用；多条引用可指向同一实例</text>
+			<rect x="0" y="209" width="136" height="110" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<rect x="0.5" y="286" width="135.0" height="32.5" rx="2.5" ry="2.5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,95%,98%); fill-rule: evenodd;"/>
+			<text x="27.150390625" y="306" style="font-family: Arial Unicode MS; font-size: 10px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,612) scale(1,-1)">① OmniScheduler</text>
+			<text x="60.0" y="293" style="font-family: Arial Unicode MS; font-size: 8px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,586) scale(1,-1)">调度</text>
+			<path d="M 0,285 L 136,285 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="8" y="271" style="font-family: Arial Unicode MS; font-size: 8.9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,542) scale(1,-1)">model_runner</text>
+			<text x="8" y="258" style="font-family: Arial Unicode MS; font-size: 8.9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,516) scale(1,-1)">tp_worker / model_worker</text>
+			<path d="M 0,251 L 136,251 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="8" y="237" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,474) scale(1,-1)">_run_batch()</text>
+			<text x="8" y="224" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,448) scale(1,-1)">stream_output()</text>
+			<rect x="157" y="209" width="151" height="110" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<rect x="157.5" y="286" width="150.0" height="32.5" rx="2.5" ry="2.5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,95%,98%); fill-rule: evenodd;"/>
+			<text x="173.27578125000002" y="306" style="font-family: Arial Unicode MS; font-size: 9.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,612) scale(1,-1)">② Qwen3TTSModelRunner</text>
+			<text x="206.72265625" y="293" style="font-family: Arial Unicode MS; font-size: 8px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,586) scale(1,-1)">一轮 TTS 流程</text>
+			<path d="M 157,285 L 308,285 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="165" y="271" style="font-family: Arial Unicode MS; font-size: 8.9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,542) scale(1,-1)">tp_worker</text>
+			<text x="165" y="258" style="font-family: Arial Unicode MS; font-size: 8.9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,516) scale(1,-1)">model（同一模型）</text>
+			<path d="M 157,251 L 308,251 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="165" y="237" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,474) scale(1,-1)">before_prefill() / before_decode()</text>
+			<text x="165" y="224" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,448) scale(1,-1)">collect_codes()</text>
+			<rect x="331" y="209" width="131" height="110" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<rect x="331.5" y="286" width="130.0" height="32.5" rx="2.5" ry="2.5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,96%,94%); fill-rule: evenodd;"/>
+			<text x="360.743017578125" y="306" style="font-family: Arial Unicode MS; font-size: 9.9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,612) scale(1,-1)">③ ModelWorker</text>
+			<text x="360.5" y="293" style="font-family: Arial Unicode MS; font-size: 8px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,586) scale(1,-1)">运行环境与批次接口</text>
+			<path d="M 331,285 L 462,285 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="339" y="271" style="font-family: Arial Unicode MS; font-size: 8.9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,542) scale(1,-1)">model_runner</text>
+			<path d="M 331,264 L 462,264 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="339" y="250" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,500) scale(1,-1)">init_model_runner()</text>
+			<text x="339" y="237" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,474) scale(1,-1)">forward_batch_generation()</text>
+			<rect x="485" y="209" width="131" height="110" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<rect x="485.5" y="286" width="130.0" height="32.5" rx="2.5" ry="2.5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,96%,94%); fill-rule: evenodd;"/>
+			<text x="505.01708984375" y="306" style="font-family: Arial Unicode MS; font-size: 9.8px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,612) scale(1,-1)">④ SGLModelRunner</text>
+			<text x="514.7109375" y="293" style="font-family: Arial Unicode MS; font-size: 8px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,586) scale(1,-1)">SGLang 执行器适配</text>
+			<path d="M 485,285 L 616,285 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="493" y="271" style="font-family: Arial Unicode MS; font-size: 8.9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,542) scale(1,-1)">model</text>
+			<path d="M 485,264 L 616,264 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="493" y="250" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,500) scale(1,-1)">load_model()</text>
+			<text x="493" y="237" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,474) scale(1,-1)">_extend_forward_kwargs()</text>
+			<rect x="639" y="209" width="148.8897637795277" height="110" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<rect x="639.5" y="286" width="147.8897637795277" height="32.5" rx="2.5" ry="2.5" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(95%,94%,98%); fill-rule: evenodd;"/>
+			<text x="668.7898037647637" y="306" style="font-family: Arial Unicode MS; font-size: 9.8px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,612) scale(1,-1)">⑤ Qwen3TTSTalker</text>
+			<text x="676.5425381397638" y="293" style="font-family: Arial Unicode MS; font-size: 8px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,586) scale(1,-1)">具体 nn.Module 模型</text>
+			<path d="M 639,285 L 787.889764,285 Z" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6;"/>
+			<text x="647" y="271" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,542) scale(1,-1)">forward()</text>
+			<text x="647" y="258" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,516) scale(1,-1)">code_predictor_forward()</text>
+			<polyline points="136 264, 157 264" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="157 264, 152 266.5, 152 261.5" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1; fill: rgb(12%,33%,60%); fill-rule: evenodd;"/>
+			<polyline points="308 264, 331 264" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="331 264, 326 266.5, 326 261.5" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1; fill: rgb(12%,33%,60%); fill-rule: evenodd;"/>
+			<polyline points="462 264, 485 264" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="485 264, 480 266.5, 480 261.5" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1; fill: rgb(12%,33%,60%); fill-rule: evenodd;"/>
+			<polyline points="616 264, 639 264" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="639 264, 634 266.5, 634 261.5" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1; fill: rgb(12%,33%,60%); fill-rule: evenodd;"/>
+			<polyline points="65 319, 65 333, 396 333, 396 319" style="stroke: rgb(14%,45%,35%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="396 319, 393.5 324, 398.5 324" style="stroke: rgb(14%,45%,35%); stroke-linecap: butt; stroke-width: 1; fill: rgb(14%,45%,35%); fill-rule: evenodd;"/>
+			<text x="146.8748046875" y="337" style="font-family: Arial Unicode MS; font-size: 8.8px;fill: rgb(14%,45%,35%); stroke:none;" transform="translate(0,674) scale(1,-1)">tp_worker / model_worker：同一个 Worker</text>
+			<polyline points="233 209, 233 190, 713 190, 713 209" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="713 209, 710.5 204, 715.5 204" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1; fill: rgb(45%,32%,55%); fill-rule: evenodd;"/>
+			<text x="375.990966796875" y="194" style="font-family: Arial Unicode MS; font-size: 9px;fill: rgb(45%,32%,55%); stroke:none;" transform="translate(0,388) scale(1,-1)">model：快捷引用同一个 Talker，不重复创建模型</text>
+			<text x="0" y="168" style="font-family: Arial Unicode MS; font-size: 11.4px;fill: rgb(12%,33%,60%); stroke:none;" transform="translate(0,336) scale(1,-1)">02  类继承关系</text>
+			<text x="596.7586602639027" y="168" style="font-family: Arial Unicode MS; font-size: 9.1px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,336) scale(1,-1)">空心三角指向父类；省略 Generic 与隐式 object</text>
+			<rect x="0" y="0" width="239" height="152" rx="5" ry="5" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: none; fill-rule: evenodd; stroke-dasharray: 4, 3;"/>
+			<rect x="263" y="0" width="239" height="152" rx="5" ry="5" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: none; fill-rule: evenodd; stroke-dasharray: 4, 3;"/>
+			<rect x="526" y="0" width="261.8897637795277" height="152" rx="5" ry="5" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: none; fill-rule: evenodd; stroke-dasharray: 4, 3;"/>
+			<rect x="15" y="98" width="209" height="41" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(92%,95%,98%); fill-rule: evenodd;"/>
+			<text x="59.397387695312496" y="125" style="font-family: Arial Unicode MS; font-size: 10.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,250) scale(1,-1)">⑥ ModelRunner（Omni）</text>
+			<text x="66.15192871093751" y="107" style="font-family: Arial Unicode MS; font-size: 8.1px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,214) scale(1,-1)">本项目 model_runner/base.py</text>
+			<rect x="15" y="23" width="209" height="41" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(92%,95%,98%); fill-rule: evenodd;"/>
+			<text x="56.574267578125" y="50" style="font-family: Arial Unicode MS; font-size: 10.2px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,100) scale(1,-1)">② Qwen3TTSModelRunner</text>
+			<text x="72.0173095703125" y="32" style="font-family: Arial Unicode MS; font-size: 8.1px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,64) scale(1,-1)">继承 execute() 等通用流程</text>
+			<polyline points="119 64, 119 98" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="119 98, 115.5 91, 122.5 91" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="129" y="78" style="font-family: Arial Unicode MS; font-size: 8.8px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,156) scale(1,-1)">继承</text>
+			<rect x="278" y="98" width="209" height="41" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(92%,96%,94%); fill-rule: evenodd;"/>
+			<text x="315.8039794921875" y="125" style="font-family: Arial Unicode MS; font-size: 10.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,250) scale(1,-1)">⑦ ModelRunner（SGLang）</text>
+			<text x="309.33896484375" y="107" style="font-family: Arial Unicode MS; font-size: 8.1px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,214) scale(1,-1)">sglang.srt.model_executor.model_runner</text>
+			<rect x="278" y="23" width="209" height="41" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(92%,96%,94%); fill-rule: evenodd;"/>
+			<text x="334.696533203125" y="50" style="font-family: Arial Unicode MS; font-size: 10.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,100) scale(1,-1)">④ SGLModelRunner</text>
+			<text x="337.9440673828125" y="32" style="font-family: Arial Unicode MS; font-size: 8.1px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,64) scale(1,-1)">继承 forward() / sample()</text>
+			<polyline points="382 64, 382 98" style="stroke: rgb(14%,45%,35%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="382 98, 378.5 91, 385.5 91" style="stroke: rgb(14%,45%,35%); stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="392" y="78" style="font-family: Arial Unicode MS; font-size: 8.8px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,156) scale(1,-1)">继承</text>
+			<rect x="541" y="109" width="231.8897637795277" height="30" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(95%,94%,98%); fill-rule: evenodd;"/>
+			<text x="587.6257412647637" y="121.0" style="font-family: Arial Unicode MS; font-size: 10.1px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,242) scale(1,-1)">Qwen3TTSPromptBuilderMixin</text>
+			<rect x="541" y="61" width="107" height="30" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(95%,94%,98%); fill-rule: evenodd;"/>
+			<text x="560.438232421875" y="73.0" style="font-family: Arial Unicode MS; font-size: 9.5px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,146) scale(1,-1)">torch.nn.Module</text>
+			<rect x="652" y="12" width="120.8897637795277" height="42" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.8; fill: rgb(95%,94%,98%); fill-rule: evenodd;"/>
+			<text x="669.6124600147638" y="40" style="font-family: Arial Unicode MS; font-size: 9.4px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,80) scale(1,-1)">⑤ Qwen3TTSTalker</text>
+			<text x="696.2448818897637" y="21" style="font-family: Arial Unicode MS; font-size: 8.1px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,42) scale(1,-1)">多重继承</text>
+			<polyline points="713 54, 713 109" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="713 109, 709.5 102, 716.5 102" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<polyline points="667 54, 667 76, 648 76" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="648 76, 655 79.5, 655 72.5" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+		</g>
+	</g>
+</svg>

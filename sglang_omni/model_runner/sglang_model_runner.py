@@ -270,8 +270,13 @@ class SGLModelRunner(ModelRunner):
         self.weight_share_config = None
         self.weight_share_record = None
         self.weight_ipc_leader_monitor = None
+        # 将类似于这种映射放到了 sglang/sglang-omni 的模型架构及其实现的注册表中
+        #   "Qwen3TTSTalker": "sglang_omni.models.qwen3_tts.sglang_model:Qwen3TTSTalker"
+        # super().__init__(xx) 会根据模型架构 Qwen3TTSTalker 路由到其构造方法来给 ModelRunner 持有的model初始化 模型对象
         self.register_omni_model()
 
+        # sglang ModelRunner 会根据模型架构初始化 ModelRunner 持有的模型类
+        # NOTE
         super().__init__(
             model_config=model_config,
             mem_fraction_static=get_schedule().mem_fraction_static,
@@ -287,6 +292,19 @@ class SGLModelRunner(ModelRunner):
         field. Keeping both untouched during admission preserves their
         contracts; model kwargs are the supported late-bound transport used by
         both eager execution and breakable prefill graph capture/replay.
+
+        TODO 这个方法会在 super.forward() 的推理链路被使用
+            ModelRunner.forward()                         【SGLang】
+            │  self 始终是 SGLModelRunner 实例
+            → ModelRunner._forward_raw()                   【SGLang】
+            → EagerRunner.execute()
+            → EagerRunner._execute_extend()
+                │
+                ├─ ① SGLModelRunner._extend_forward_kwargs() ← 调用本项目覆盖的方法
+                │    → 补充输入向量(input_embeds)、请求 ID 等参数
+                │
+                └─ ② Qwen3TTSTalker.forward()
+                     → 使用这些参数执行模型计算
         """
         kwargs = super()._extend_forward_kwargs(forward_batch, pp_proxy_tensors)
         prefill_inputs = get_omni_prefill_inputs(forward_batch)
@@ -595,6 +613,7 @@ class SGLModelRunner(ModelRunner):
 
     def register_omni_model(self):
         # Register sglang_omni model classes directly in SGLang's model registry.
+        # 翻译：将 sglang_omni 模型类直接注册到 SGLang 的模型注册表中
         import importlib
 
         from sglang.srt.models.registry import ModelRegistry
@@ -627,9 +646,15 @@ class SGLModelRunner(ModelRunner):
         for arch, path in sglang_omni_models.items():
             module_path, _, attr = path.partition(":")
             try:
-                ModelRegistry.models[arch] = getattr(
-                    importlib.import_module(module_path), attr
-                )
+                # module_path 类似于 sglang_omni.models.qwen3_tts.sglang_model
+                model_path_value = importlib.import_module(module_path)
+                # note 将 sglang-omni 定义的模型架构及其具体实现放到模型注册表中
+                #
+                #  attr 是 Qwen3TTSTalker
+                #  sglang.srt.models.registry._ModelRegistry，定义如下、注意 models 字段
+                #  class _ModelRegistry:
+                #     models: Dict[str, Union[Type[nn.Module], str]] = field(default_factory=dict)
+                ModelRegistry.models[arch] = getattr(model_path_value, attr)
             except Exception as exc:
                 logger.warning(f"sglang-omni: skipping model {arch} ({exc})")
 

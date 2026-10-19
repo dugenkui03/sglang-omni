@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="787.8897637795277" height="198" preserveAspectRatio="xMinYMin meet" viewBox="0 0 787 198" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="787.8897637795277" height="198"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-198)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="2.0" y="174" width="130.0" height="22" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,98%); fill-rule: evenodd;"/>
+			<text x="34.9517822265625" y="181" style="font-family: Arial Unicode MS; font-size: 9.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,362) scale(1,-1)">OmniScheduler</text>
+			<polyline points="67 174, 67 2" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 0.7; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 3;"/>
+			<rect x="156.0" y="174" width="158.0" height="22" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,98%); fill-rule: evenodd;"/>
+			<text x="183.56845703124998" y="181" style="font-family: Arial Unicode MS; font-size: 9.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,362) scale(1,-1)">Qwen3TTSModelRunner</text>
+			<polyline points="235 174, 235 2" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 0.7; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 3;"/>
+			<rect x="334.0" y="174" width="130.0" height="22" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,96%,94%); fill-rule: evenodd;"/>
+			<text x="371.3520263671875" y="181" style="font-family: Arial Unicode MS; font-size: 9.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,362) scale(1,-1)">ModelWorker</text>
+			<polyline points="399 174, 399 2" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 0.7; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 3;"/>
+			<rect x="486.0" y="174" width="140.0" height="22" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,96%,94%); fill-rule: evenodd;"/>
+			<text x="518.7795654296875" y="181" style="font-family: Arial Unicode MS; font-size: 9.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,362) scale(1,-1)">SGLModelRunner</text>
+			<polyline points="556 174, 556 2" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 0.7; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 3;"/>
+			<rect x="651.0" y="174" width="136.0" height="22" rx="3" ry="3" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(95%,94%,98%); fill-rule: evenodd;"/>
+			<text x="682.5651611328125" y="181" style="font-family: Arial Unicode MS; font-size: 9.3px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,362) scale(1,-1)">Qwen3TTSTalker</text>
+			<polyline points="719 174, 719 2" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 0.7; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 3;"/>
+			<rect x="232" y="4" width="6" height="151" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6; fill: rgb(86%,90%,95%); fill-rule: evenodd;"/>
+			<rect x="396" y="65" width="6" height="64" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6; fill: rgb(86%,90%,95%); fill-rule: evenodd;"/>
+			<rect x="553" y="65" width="6" height="40" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6; fill: rgb(86%,90%,95%); fill-rule: evenodd;"/>
+			<rect x="716" y="65" width="6" height="19" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6; fill: rgb(86%,90%,95%); fill-rule: evenodd;"/>
+			<rect x="716" y="12" width="6" height="14" style="stroke: rgb(60%,66%,73%); stroke-linecap: butt; stroke-width: 0.6; fill: rgb(86%,90%,95%); fill-rule: evenodd;"/>
+			<polyline points="67 155, 232 155" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="232 155, 227 157.5, 227 152.5" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1; fill: rgb(9%,16%,27%); fill-rule: evenodd;"/>
+			<text x="96.72607421875" y="168" style="font-family: Arial Unicode MS; font-size: 9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,336) scale(1,-1)">① ModelRunner.execute()</text>
+			<text x="128.49853515625" y="158" style="font-family: Arial Unicode MS; font-size: 9px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,316) scale(1,-1)">Omni 声明</text>
+			<polyline points="238 129, 396 129" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="396 129, 391 131.5, 391 126.5" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1; fill: rgb(9%,16%,27%); fill-rule: evenodd;"/>
+			<text x="283.9935546875" y="142" style="font-family: Arial Unicode MS; font-size: 8.8px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,284) scale(1,-1)">② ModelWorker.</text>
+			<text x="263.439453125" y="132" style="font-family: Arial Unicode MS; font-size: 8.8px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,264) scale(1,-1)">forward_batch_generation()</text>
+			<polyline points="402 105, 553 105" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="553 105, 548 107.5, 548 102.5" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1; fill: rgb(9%,16%,27%); fill-rule: evenodd;"/>
+			<text x="427.215869140625" y="118" style="font-family: Arial Unicode MS; font-size: 8.7px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,236) scale(1,-1)">③ ModelRunner.forward()</text>
+			<text x="451.62939453125" y="108" style="font-family: Arial Unicode MS; font-size: 8.7px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,216) scale(1,-1)">SGLang 声明</text>
+			<polyline points="559 81, 716 81" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="716 81, 711 83.5, 711 78.5" style="stroke: rgb(9%,16%,27%); stroke-linecap: butt; stroke-width: 1; fill: rgb(9%,16%,27%); fill-rule: evenodd;"/>
+			<text x="579.91611328125" y="94" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,188) scale(1,-1)">④ Qwen3TTSTalker.forward()</text>
+			<text x="589.227880859375" y="84" style="font-family: Arial Unicode MS; font-size: 8.6px;fill: rgb(9%,16%,27%); stroke:none;" transform="translate(0,168) scale(1,-1)">普通路径经 EagerRunner</text>
+			<polyline points="716 65, 559 65" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 2;"/>
+			<polygon points="559 65, 564 67.5, 564 62.5" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 1; fill: rgb(32%,39%,47%); fill-rule: evenodd;"/>
+			<text x="599.6656982421875" y="70" style="font-family: Arial Unicode MS; font-size: 8.3px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,140) scale(1,-1)">logits / hidden states</text>
+			<polyline points="553 65, 402 65" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 2;"/>
+			<polygon points="402 65, 407 67.5, 407 62.5" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 1; fill: rgb(32%,39%,47%); fill-rule: evenodd;"/>
+			<text x="452.0" y="70" style="font-family: Arial Unicode MS; font-size: 8.5px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,140) scale(1,-1)">底层前向结果</text>
+			<polyline points="396 65, 238 65" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 2;"/>
+			<polygon points="238 65, 243 67.5, 243 62.5" style="stroke: rgb(32%,39%,47%); stroke-linecap: butt; stroke-width: 1; fill: rgb(32%,39%,47%); fill-rule: evenodd;"/>
+			<text x="274.0916748046875" y="70" style="font-family: Arial Unicode MS; font-size: 8.3px;fill: rgb(32%,39%,47%); stroke:none;" transform="translate(0,140) scale(1,-1)">GenerationBatchResult</text>
+			<polyline points="238 48, 261 48, 261 38, 238 38" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 0.9; fill: None; fill-rule: evenodd;"/>
+			<polygon points="238 38, 242 40, 242 36" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1; fill: rgb(12%,33%,60%); fill-rule: evenodd;"/>
+			<text x="269" y="43" style="font-family: Arial Unicode MS; font-size: 8.7px;fill: rgb(12%,33%,60%); stroke:none;" transform="translate(0,86) scale(1,-1)">⑤ Qwen3TTSModelRunner.sample_next_token_ids()：采样第 0 码本</text>
+			<polyline points="238 26, 716 26" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd;"/>
+			<polygon points="716 26, 711 28.5, 711 23.5" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1; fill: rgb(45%,32%,55%); fill-rule: evenodd;"/>
+			<text x="353.471923828125" y="31" style="font-family: Arial Unicode MS; font-size: 9px;fill: rgb(45%,32%,55%); stroke:none;" transform="translate(0,62) scale(1,-1)">⑥ Qwen3TTSTalker.code_predictor_forward()：补齐剩余码本</text>
+			<polyline points="716 12, 238 12" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 2;"/>
+			<polygon points="238 12, 243 14.5, 243 9.5" style="stroke: rgb(45%,32%,55%); stroke-linecap: butt; stroke-width: 1; fill: rgb(45%,32%,55%); fill-rule: evenodd;"/>
+			<text x="421.0174560546875" y="17" style="font-family: Arial Unicode MS; font-size: 8.5px;fill: rgb(45%,32%,55%); stroke:none;" transform="translate(0,34) scale(1,-1)">完整 codes、反馈 embedding</text>
+			<polyline points="232 4, 67 4" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1.1; fill: None; fill-rule: evenodd; stroke-dasharray: 3, 2;"/>
+			<polygon points="67 4, 72 6.5, 72 1.5" style="stroke: rgb(12%,33%,60%); stroke-linecap: butt; stroke-width: 1; fill: rgb(12%,33%,60%); fill-rule: evenodd;"/>
+			<text x="97.0784912109375" y="9" style="font-family: Arial Unicode MS; font-size: 8.5px;fill: rgb(12%,33%,60%); stroke:none;" transform="translate(0,18) scale(1,-1)">⑦ finalize() 后返回本轮输出</text>
+		</g>
+	</g>
+</svg>

@@ -358,6 +358,7 @@ class OmniScheduler(Generic[RequestDataT]):
             pass
         self.request_builder = request_builder
         self.result_adapter = result_adapter
+        # Qwen3TTSModelRunner
         self.model_runner: ModelRunner[RequestDataT] | None = None
         self.stream_output_builder = stream_output_builder
         self.stream_chunk_handler = stream_chunk_handler
@@ -853,7 +854,11 @@ class OmniScheduler(Generic[RequestDataT]):
             get_total_prefill_busy_us=lambda: self.total_prefill_busy_us,
             get_decode_moment_totals=lambda: self.decode_moment_totals,
         )
+        # tip output_streamer 也是 sglang-Scheduler 中定义的对象
+        #   SimpleNamespace 是 Python 中可灵活添加属性和方法的类
+        #   在这里的应用是、比如绑定了 self.stream_output 方法，那对 output_streamer 的调用就会路由到绑定的 self.output_streamer 方法上
         self.output_streamer = types.SimpleNamespace(
+            # note
             stream_output=self.stream_output,
             _stream_output_generation=lambda reqs, return_logprob, **_kwargs: self.stream_output(
                 reqs, return_logprob
@@ -878,6 +883,7 @@ class OmniScheduler(Generic[RequestDataT]):
             logprob_result_processor=SchedulerLogprobResultProcessor(
                 model_config=self.model_config
             ),
+            # NOTE 这里定义了结果传递到哪：当前对象的 stream_output 方法 // 看下 output_streamer 的定义
             output_streamer=self.output_streamer,
             beam_coordinator=self.beam_coordinator,
             abort_request=lambda request: self.abort(request.rid),
@@ -2010,24 +2016,16 @@ class OmniScheduler(Generic[RequestDataT]):
                 return _FAILED_BATCH_RESULT
 
     def process_batch_result(self, batch, result) -> None:
-        """
-        调用链路
-
-        OmniScheduler.process_batch_result()
-            → _Upstream.process_batch_result()
-                │
-                ├─ ① 更新请求：追加 token、判断结束、处理 KV 缓存
-                │
-                └─ ② OmniScheduler.stream_output()：处理已完成请求
-                    → result_adapter()：整理累计音频编码
-                    → self.outbox.put(...)  ← 交给同进程的 Stage
-                        │
-                        → Stage.drain_outbox_external()
-                        → Stage.route_result()
-                            ├─ tts_engine 的结果 → 下游 vocoder
-                            └─ vocoder 最终结果 → Coordinator       // 重点，将数据给到上游 Coordinator
-        """
         with request_log_context(*(request.rid for request in batch.reqs)):
+            # NOTE
+            #   _Upstream 是 sglang 的 Scheduler 类，这种调用 process_batch_result 方法的时候
+            #   传递 self 是指将当前的 self(OmniScheduler) 作为 sglang-Scheduler.process_batch_result 的 self
+            #   参数、来执行调用
+            #
+            #   process_batch_result 中调用了 self.batch_result_processor.process_batch_result_decode 方法
+            #   OmniScheduler 初始化的时候定义了 batch_result_processor 的对象和具体的行为 // SchedulerBatchResultProcessor 类型
+            logger.info("将 OmniScheduler 作为 sglang-Scheduler#process_batch_result(self, ..) 的 self 进行方法调用"+
+                        "方法调用会会到 OmniScheduler 中")
             _Upstream.process_batch_result(self, batch, result)
         # note (Richard Wang): cache prompt before blocking tail inserts
         for req in batch.reqs:
@@ -2061,9 +2059,7 @@ class OmniScheduler(Generic[RequestDataT]):
         self.stamp_batch_launch(batch)
         sched_output = self.build_sched_output(batch)
         if should_log_inference_details():
-            logger.info("开始执行模型推理")
-        else:
-            pass
+            logger.info("开始执行模型推理：OmniScheduler(模型一般会实现和自定义).model_runner.execute")
         mr_output = self.model_runner.execute(sched_output)
         if should_log_inference_details():
             result_fields = {
@@ -2323,6 +2319,8 @@ class OmniScheduler(Generic[RequestDataT]):
         to the detokenizer via ZMQ.  We capture finished requests here
         and put them in the outbox so Stage can route them downstream.
         """
+
+        logger.info("处理请求结果/非 stream 请求也是调用到这里")
         for req in reqs:
             if skip_req is not None and req is skip_req:
                 continue
@@ -2346,6 +2344,7 @@ class OmniScheduler(Generic[RequestDataT]):
                         continue
                     else:
                         pass
+                    # tip 获取 scheduler 的结果
                     data = (
                         req.omni_data
                     )  # noqa: leading-underscore  # upstream spelling, or the public name is already taken
@@ -2357,6 +2356,7 @@ class OmniScheduler(Generic[RequestDataT]):
                         self.close_completed_request(req)
                         continue
                     else:
+                        logger.info("获取 OmniScheduler 处理结果，类型是 %s", type(data).__name__)
                         pass
                     # Abort may run from the stage listener thread. Claiming the
                     # terminal request under the shared lock makes normal
@@ -2401,6 +2401,8 @@ class OmniScheduler(Generic[RequestDataT]):
                 session_unit = self.active_session_unit(rid)
                 if session_unit is None:
                     result = self.result_adapter(data)
+                    logger.info("将 OmniScheduler 结果 %s 转换成后续 Stage/Coordinator 需要的类型%s",
+                                type(data).__name__, type(result).__name__)
                 else:
                     bridge = self.session_bridge
                     assert bridge is not None
@@ -2442,6 +2444,7 @@ class OmniScheduler(Generic[RequestDataT]):
                 pass
 
             self.first_emit_done.discard(rid)
+            # NOTE
             self.outbox.put(
                 OutgoingMessage(
                     request_id=rid,
@@ -2449,6 +2452,7 @@ class OmniScheduler(Generic[RequestDataT]):
                     data=result,
                 )
             )
+            logger.info("结果放到 OmniScheduler.outbox 中，当前 outbox 大小%s",len(self.outbox))
 
     def on_stream_chunk(self, request_id: str, chunk: StreamItem) -> None:
         if request_id in self.completed_request_ids:
@@ -3328,12 +3332,15 @@ class OmniScheduler(Generic[RequestDataT]):
             self.cur_batch = batch
 
             if batch:
+                logger.info(f"omni scheduler 组批成功，批次大小：{len(batch.reqs)}\n 开始 run_batch 进行推理")
                 # NOTE 执行批处理
                 result = self.run_batch(batch)
                 if result is not _FAILED_BATCH_RESULT:
+                    logger.info("run_batch 成功")
                     # 处理结果进行解码、转换成音频、并将结果给到上游进程 Coordinator
                     self.process_batch_result(batch, result)
                 else:
+                    logger.warning("run_batch 失败，result 详情：%s", result)
                     pass
             else:
                 self._sched_idled = True  # noqa: leading-underscore

@@ -350,6 +350,8 @@ def build_qwen3_tts_state(
 ) -> Qwen3TTSState:
     """
        从上游请求 解析 qwen tts 请求参数
+
+       payload -> request -> state
     """
 
     inputs = payload.request.inputs or {}
@@ -531,7 +533,7 @@ def build_qwen3_tts_state(
         "generation_kwargs": state.generation_kwargs,
         "seed": normalized_seed,
     }
-    logger.info(f"TTS 请求核心参数\n{json_for_log(request_summary)}")
+    logger.info(f"TTS 请求核心参数 state(payload -> request -> state)\n{json_for_log(request_summary)}")
     return state
 
 
@@ -1047,21 +1049,27 @@ class Qwen3TTSRefCodeBatcher:
     def submit(
         self, waveform: str | npt.NDArray[np.generic], sample_rate: int
     ) -> concurrent.futures.Future[torch.Tensor]:
-        """Carry caller identities across the reference-code worker queue."""
+        """Carry caller identities across the reference-code worker queue.
+           NOTE 将任务入队，任务执行链路：1）组批run( → drain → queue.get) 2）编码 encode_waveform->set_result to future
+        """
         future: concurrent.futures.Future[torch.Tensor] = concurrent.futures.Future()
         self.queue.put((waveform, int(sample_rate), future, request_ids_context.get()))
         return future
 
     def drain(self) -> tuple[list[object], bool]:
+        """
+           note 组批：获取本批次要进行编码的语音
+        """
         first = self.queue.get()
         if first is _QWEN3_TTS_REF_CODE_BATCH_STOP:
             return [], True
         else:
             pass
         batch = [first]
+        # 获取token编码的最大等待时间-感觉这里也用 max_batch_wait_s 会挤占后边主干模型的时间
         deadline = time.monotonic() + self.max_batch_wait_s
         shutdown = False
-        while len(batch) < self.max_batch_size:
+        while len(batch) < self.max_batch_size: # 如果达到了目标数量则
             try:
                 remaining = deadline - time.monotonic()
                 queued = (
@@ -1122,7 +1130,7 @@ class Qwen3TTSRefCodeBatcher:
         )
         samples = torch.from_numpy(audio[0]) # 因为 _normalize_audio_inputs 输入只有一个元素，所以这里只获取第一个结果
         logger.info(
-            f"参考音频波形规范化完成\n"
+            f"参考音频波形规范化完成(单声道-多声道，采样率对齐24kHz)\n"
             f"{json_for_log({'reference_audio': waveform, 'sample_rate_hz': sample_rate, 'waveform': samples})}"
         )
 
@@ -1180,11 +1188,13 @@ class Qwen3TTSRefCodeBatcher:
     def run(self) -> None:
         """Restore each reference's context independently, even within a shared batch."""
         while True:
+            # NOTE 组批
             raw_batch, shutdown = self.drain()
             if not raw_batch:
                 return
             else:
                 pass
+            logger.info("qwen3-tts 预处理：组批成功，批次大小：%s",len(raw_batch))
             batch = [
                 item for item in raw_batch if isinstance(item, tuple) and len(item) == 4
             ]
@@ -1195,18 +1205,23 @@ class Qwen3TTSRefCodeBatcher:
                 else contextlib.nullcontext()
             )
             with torch.inference_mode(), encode_stream_ctx:
+                # 获取编码参数
                 for index, (waveform, sample_rate, _, request_ids) in enumerate(batch):
                     try:
                         with request_log_context(*request_ids):
+                            # NOTE 编码
+                            logger.info("开始第%s个 waveform 的编码",index)
                             outcomes[index] = self.encode_waveform(waveform, sample_rate)
                     except Exception as exc:
                         outcomes[index] = exc
+                logger.info("完成%s个 waveform 的编码",len(batch))
             self.synchronize_outcomes(outcomes)
             for index, (_, _, future, _) in enumerate(batch):
                 outcome = outcomes[index]
                 if isinstance(outcome, Exception):
                     future.set_exception(outcome)
                 else:
+                    # NOTE 完成编码
                     future.set_result(outcome)
             if shutdown:
                 return
@@ -1222,7 +1237,7 @@ class Qwen3TTSAdhocReferenceHook(
     ]
 ):
     """
-       NOTE 集成关系 Qwen3TTSAdhocReferenceHook -> KeyedReferenceEncodeHook -> ReferenceEncodeHook
+       NOTE 继承关系 Qwen3TTSAdhocReferenceHook -> KeyedReferenceEncodeHook -> ReferenceEncodeHook
     """
     model_id = "qwen3_tts"
     encoder_id = "qwen3_tts_voice_clone_prompt"
@@ -1296,7 +1311,7 @@ class Qwen3TTSAdhocReferenceHook(
         else:
             pass
 
-        logger.info("开始参考音频编码\n%s",
+        logger.info("开始参考音频编码(音频和speaker)\n%s",
             json_for_log({"x_vector_only_mode": item.x_vector_only_mode, "encode_ref_code": not item.x_vector_only_mode}))
         with torch.no_grad():
             # tip 获取声音波形
@@ -1335,6 +1350,7 @@ class Qwen3TTSAdhocReferenceHook(
                  #
                  # 这里是 声音编码（对应 speaker 编码），调用到 Qwen3TTSRefCodeBatcher.submit()
                  # 任务的具体执行在
+                logger.info("提交参考音频编码请求")
                 ref_code_future = self.ref_code_batcher.submit(waveform, sample_rate)
             else:
                 pass
@@ -1363,6 +1379,7 @@ class Qwen3TTSAdhocReferenceHook(
                 f"{json_for_log({'speaker_waveform': speaker_waveform, 'sample_rate_hz': speaker_sample_rate, 'speaker_embedding': speaker_embedding, 'speaker_embedding_first5': speaker_embedding.flatten()[:5].tolist()})}"
             )
             ref_code = (
+                # NOTE ref_code_future.result 就是阻塞读取这个 future 的结果
                 record_ref_code_consumer_stream(ref_code_future.result(timeout=130.0))
                 if ref_code_future is not None
                 else None
@@ -1571,10 +1588,10 @@ def prepare_qwen3_tts_base_request(
     speaker_cache = get_speaker_artifact_cache()
     # tip 这个是指 clone tts 链路可以给 音色指定 name
     cache_key = qwen3_tts_uploaded_voice_cache_key(state)
-    logger.info("预处理链路缓存键\n%s", json_for_log({"cache_key": cache_key}))
+    logger.info("预处理链路缓存 key\n%s", json_for_log({"cache_key": cache_key}))
 
     cached_artifact = speaker_cache.get(cache_key) if cache_key is not None else None
-    logger.info("上传音色缓存查询结果\n%s",
+    logger.info("缓存信息(是否命中缓存以及缓存结果详情)\n%s",
         json_for_log({"cache_enabled": cache_key is not None, "cache_hit": cached_artifact is not None, "cached_artifact": cached_artifact}))
 
     cached_prompt = (
@@ -1625,7 +1642,8 @@ def prepare_qwen3_tts_base_request(
     )
     logger.info(
         f"参考文本 token 化完成，tokenizer_input={reference_text_input!r}，"
-        f"ref_id.shape={tuple(ref_id.shape) if ref_id is not None else None}"
+        f"ref_id.shape={tuple(ref_id.shape) if ref_id is not None else None}，"
+        f"前 5 个 token ID={ref_id[0, :5].tolist() if ref_id is not None else None}"
     )
     instruct_id = build_instruct_id(wrapper, state.instructions)
     with torch.no_grad():
@@ -1703,7 +1721,8 @@ def prepare_qwen3_tts_request(
        NOTE 预处理入口
     """
 
-    # NOTE 从请求解析 qwen tts 请求参数
+    # NOTE step 将收到的参数解析为预处理链路的参数
+    #   从请求解析 qwen tts 请求参数
     state = build_qwen3_tts_state(
         payload, # 输入参数
         default_stream_codec_output=default_stream_codec_output
@@ -1716,8 +1735,9 @@ def prepare_qwen3_tts_request(
 
     if state.task_type == QWEN3_TTS_TASK_BASE:
         # NOTE 克隆链路处理
+        logger.info("开始 预处理-克隆链路 请求预处理")
         (
-            input_embeds,
+            input_embeds,  # 模型主干使用的输入向量
             attention_mask,
             trailing_text_hidden,
             ref_code,
@@ -1727,7 +1747,7 @@ def prepare_qwen3_tts_request(
             wrapper=wrapper,
             prompt_constants=prompt_constants,
         )
-        logger.info("克隆链路请求参数预处理结果\n%s",
+        logger.info("预处理-克隆链路 请求预处理结果\n%s",
             json_for_log({"input_embeds": input_embeds, "attention_mask": attention_mask, "trailing_text_hidden": trailing_text_hidden, "ref_code": ref_code}))
     elif state.task_type == QWEN3_TTS_TASK_CUSTOM_VOICE:
         # NOTE 内置音色
@@ -1816,6 +1836,7 @@ def preprocess_qwen3_tts_payload(
 
     if context.stream is None:
         # note 普通链路
+        logger.info("%s 处理非流式请求",context.model)
         prepared = prepare_qwen3_tts_request(
             payload, # 输入数据
             model=context.model, # 模型
@@ -1824,6 +1845,23 @@ def preprocess_qwen3_tts_payload(
             prompt_row_cache_keys=context.prompt_row_cache_keys,
             default_stream_codec_output=default_stream_codec_output,
         )
+        result_summary = {
+            "task_type": prepared.state.task_type,
+            "text": prepared.state.text,
+            "ref_text": prepared.state.ref_text,
+            "language": prepared.state.language,
+            "x_vector_only_mode": prepared.state.x_vector_only_mode,
+            "non_streaming_mode": prepared.state.non_streaming_mode,
+            "stream_codec_output": prepared.state.stream_codec_output,
+            "prompt_tokens": len(prepared.input_ids_list),
+            "prompt_input_embeds": prepared.prompt_input_embeds,
+            "attention_mask": prepared.attention_mask,
+            "trailing_text_hidden": prepared.trailing_text_hidden,
+            "ref_code": prepared.ref_code,
+            "tts_pad_embed": prepared.tts_pad_embed,
+            "gen_kwargs": prepared.gen_kwargs,
+        }
+        logger.info(f"预处理结果核心字段\n{json_for_log(result_summary)}")
     else:
         stream_device_module = torch.get_device_module(context.stream.device)
         with stream_device_module.stream(context.stream):

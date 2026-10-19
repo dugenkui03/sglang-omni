@@ -379,14 +379,18 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
         item = self._hook.normalize_input(raw_input)  # noqa: leading-underscore
 
         # 缓存对应的 key，包括 模型、调用参数等信息
+        # tip key 是否返回 None 是由 model 层自定义的 hook 实现的：
+        #   Qwen3TTSAdhocReferenceHook -> KeyedReferenceEncodeHook -> ReferenceEncodeHook
         key = self._hook.cache_key(item)  # noqa: leading-underscore
         logger.info("预处理-进入缓存或编码链路\n%s",
             json_for_log({"desc": desc, "item": item, "cache_key": key}))
-        if key is None: # 缓存key为null，不是缓存为null
+        if key is None:
+            logger.info("自定义的 hook 实现没有返回 cache key 则走这条链路\n"+
+                        "xxxReferenceHook -> KeyedReferenceEncodeHook -> ReferenceEncodeHook")
             with self.lock:
                 self.uncacheable += 1
-            logger.info("参考输入不使用缓存，直接编码\n%s", json_for_log({"desc": desc}))
             try:
+                logger.info("直接编码，非缓存链路")
                 artifact = self.encode_leader(item)
                 logger.info("参考编码完成，结果不写入缓存\n%s",
                     json_for_log({"desc": desc, "artifact": artifact}))
@@ -408,7 +412,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
             stored = self.cache.get(cache_key)
             if stored is not None:
                 # 命中缓存
-                self.hits += 1 
+                self.hits += 1
             elif cache_key in self.inflight:
                 # 正在处理，还没完成
                 self.merged += 1
@@ -420,6 +424,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
                 leader_fut = concurrent.futures.Future()
                 self.inflight[cache_key] = leader_fut
         if stored is not None:
+            # NOTE 命中缓存是在这里
             logger.info("参考编码缓存命中，复用已有特征\n%s",
                 json_for_log({"cache_key": key, "artifact": stored}))
             self.maybe_log()
@@ -456,6 +461,7 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
             should_cache = self._hook.revalidate(item, key)  # noqa: leading-underscore
             with self.lock:
                 if should_cache:
+                    # NOTE 将结果进行缓存
                     self.cache.put(cache_key, stored)
                 else:
                     pass
@@ -467,9 +473,8 @@ class ReferenceEncodeService(Generic[InputT, ArtifactT, StoredT, RawInputT]):
                 self.failed += 1
             leader_fut.set_exception(exc)
             raise
+        # tip 通知正在等待相同编码结果的请求，让它们的 .result() 返回
         leader_fut.set_result(stored)
-        logger.info("参考编码缓存处理完成\n%s",
-            json_for_log({"cache_key": key, "should_cache": should_cache}))
         self.maybe_log()
         return self._hook.load_artifact(stored)  # noqa: leading-underscore
 

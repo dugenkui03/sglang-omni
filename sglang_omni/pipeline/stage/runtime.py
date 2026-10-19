@@ -159,6 +159,7 @@ class Stage:
         self.name = name
         self.role = role
         # 当前 stage 的下一个 stage
+        #   get_next 是 GetNextFn，是为了方便根据当前上下文方便的选择下一个 stage
         self.get_next = get_next
         self.gpu_id = gpu_id
         self.endpoints = endpoints
@@ -1328,7 +1329,7 @@ class Stage:
         outbox = self.scheduler.outbox
         while self.running or not outbox.empty():
             try:
-                # NOTE 读取结果
+                # NOTE 【重要】读取结果
                 out = await loop.run_in_executor(None, lambda: outbox.get(timeout=0.1))
             except _queue_mod.Empty:
                 continue
@@ -1361,7 +1362,7 @@ class Stage:
                                 self.discard_kv_transfer(out.data)
                         elif out.request_id in self.active_requests:
                             if out.type == "result":
-                                # NOTE 将结果传递到下游
+                                # NOTE 【重要】将 outbox 中的结果传递到下游
                                 await self.route_result(out.request_id, out.data)
                             elif out.type == "stream":
                                 if self.stream_targets:
@@ -1576,6 +1577,7 @@ class Stage:
                 else None
             )
             if session_operation is not None and session_operation.operation != "append":
+                logger.info("stage 执行完成，将结果发送回 coordinator")
                 await self.control_plane.send_complete(
                     CompleteMessage(
                         request_id=request_id,
@@ -1652,6 +1654,7 @@ class Stage:
                     metadata={"terminal": True},
                 )
                 # NOTE 发送消息给到 coordinator
+                logger.info("任务结束，%s 将结果发送给 coordinator", self.name)
                 await self.control_plane.send_complete(
                     CompleteMessage(
                         request_id=request_id,
@@ -1673,6 +1676,7 @@ class Stage:
                     metadata={"terminal": False, "next": list(next_stages)},
                 )
                 # 发送消息给到后边的 stage
+                logger.info("%s 任务执行结束，将结果发送给其他 stages: %s", self.name, next_stages.model_dump_json(indent=2))
                 for target in next_stages:
                     await self.send_to_stage(
                         request_id,

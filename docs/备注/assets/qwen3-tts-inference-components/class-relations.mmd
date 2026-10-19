@@ -1,0 +1,62 @@
+classDiagram
+    direction LR
+    class Scheduler["① OmniScheduler"] {
+        model_runner : Qwen3TTSModelRunner
+        tp_worker : ModelWorker
+        model_worker : ModelWorker
+        _run_batch()
+        process_batch_result()
+        stream_output()
+    }
+    class TTSRunner["② Qwen3TTSModelRunner"] {
+        tp_worker : ModelWorker
+        model : Qwen3TTSTalker
+        before_prefill()
+        before_decode()
+        collect_codes()
+        post_process_outputs()
+    }
+    class Worker["③ ModelWorker"] {
+        model_runner : SGLModelRunner
+        init_model_runner()
+        forward_batch_generation()
+        get_memory_pool()
+    }
+    class BackendRunner["④ SGLModelRunner"] {
+        model : Qwen3TTSTalker
+        register_omni_model()
+        load_model()
+        _extend_forward_kwargs()
+        init_cuda_graphs()
+    }
+    class Talker["⑤ Qwen3TTSTalker"] {
+        forward()
+        code_predictor_forward()
+        prepare_decode_buffers()
+    }
+    class OmniBase["⑥ ModelRunner - Omni"] {
+        execute()
+        prepare_and_forward()
+        finalize()
+    }
+    class SGLangBase["⑦ ModelRunner - SGLang"] {
+        forward()
+        _forward_raw()
+        sample()
+    }
+    class PromptMixin["Qwen3TTSPromptBuilderMixin"]
+    class TorchModule["torch.nn.Module"]
+
+    Scheduler --> TTSRunner : model_runner
+    Scheduler --> Worker : tp_worker / model_worker
+    TTSRunner --> Worker : tp_worker
+    Worker --> BackendRunner : model_runner
+    BackendRunner --> Talker : model
+    TTSRunner --> Talker : model - same instance
+    OmniBase <|-- TTSRunner
+    SGLangBase <|-- BackendRunner
+    PromptMixin <|-- Talker
+    TorchModule <|-- Talker
+
+    note for Scheduler "复用上游 Scheduler 方法，不继承 Scheduler"
+    note for TTSRunner "model 是同一 Talker 实例的快捷引用"

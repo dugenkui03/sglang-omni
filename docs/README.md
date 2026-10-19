@@ -30,3 +30,8 @@ PORT=8080 make serve
 - Prefer **Markdown** for cookbooks and usage guides. Use notebooks only when the example must be executed in docs CI.
 - Prefer relative links (`../get_started/installation.md`), not absolute docs URLs.
 - Match existing launch / request examples in neighboring cookbooks.
+
+## 中文学习笔记
+
+- [8.1 Qwen3-TTS 数据流：预处理部分](<备注/8.1 qwen3-tts 数据流：预处理部分.md>)
+- [8.2 Qwen3-TTS 推理组件：组合、继承与职责](<备注/8.2 qwen3-tts 推理组件：组合、继承与职责.md>)（[两页 A4 横版 PDF](<备注/pdf/8.2 qwen3-tts 推理组件：组合、继承与职责.pdf>)）

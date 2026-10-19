@@ -173,7 +173,10 @@ class Qwen3TTSSpeakerEncoderCudaGraphRunner:
         result = torch.log(
             torch.clamp(torch.matmul(self.mel_basis, magnitude), min=SPEAKER_MEL_CLIP)
         )
-        logger.info(f"对数梅尔频谱计算完成\n{json_for_log(result)}")
+        logger.info(
+            f"对数梅尔频谱计算完成\n{json_for_log(result)}\n"
+            f"第一个时间帧的前 5 个 Mel 值（帧索引 0）：{result[0, :5, 0].tolist()}"
+        )
         return result
 
     def capture(self, codec_frame_buckets: Iterable[int], codec_hop: int) -> None:

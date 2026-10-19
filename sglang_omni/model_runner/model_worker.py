@@ -128,6 +128,7 @@ class ModelWorker:
         initialize_model_worker_backend_globals(
             self.model_config, effective_quantization
         )
+        # NOTE qwen3-tts 链路：init SGLangModelRunner() -> init Qwen3TTSTalker()
         self.init_model_runner()
         self.init_dllm_algorithm()
         self.prefill_cuda_graph_usage = PrefillCudaGraphUsage()
@@ -349,7 +350,9 @@ class ModelWorker:
     ):
         from sglang.srt.managers.scheduler import GenerationBatchResult
 
+        logger.info("使用 sglang_omni/model_runner/model_worker.py#ModelWorker.forward_batch_generation(...) 进行推理")
         if self.dllm_algorithm is not None:
+            logger.info("扩散模型链路/dllm mode")
             algo_states = None
             if self.dllm_algorithm.fdfo and batch is not None:
                 algo_states = [req.dllm_algo_state for req in batch.reqs]
@@ -377,6 +380,8 @@ class ModelWorker:
         else:
             pass
 
+        logger.info(f"使用 {type(self.model_runner).__name__} 进行推理")
+        # qwen3-tts: model_runner/sglang_model_runner.py/SGLModelRunner#forward(..)
         out = self.model_runner.forward(forward_batch=forward_batch)
         logits_output, can_run_cuda_graph = out.logits_output, out.can_run_graph
         self.record_prefill_cuda_graph_usage(

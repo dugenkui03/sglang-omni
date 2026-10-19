@@ -7,6 +7,7 @@ pass, sampling, logit post-processing, and output extraction.
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, replace
@@ -31,6 +32,8 @@ from sglang_omni.scheduling.types import (
     SchedulerRequest,
     sampled_logprobs_to_list,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.mlx.tp_worker import MlxTpModelWorker
@@ -382,14 +385,20 @@ class ModelRunner(Generic[RequestDataInput]):
         )
 
     def execute(self, scheduler_output: SchedulerOutput) -> ModelRunnerOutput:
-        """Full synchronous pipeline: build → prepare → forward → post →
-        sample → output.
+        """Full synchronous pipeline:
+            build：构建 ForwardBatch
+            → prepare
+            → forward
+            → post
+            → sample
+            → output.
 
         Used when async decode is disabled. Behavior is byte-identical to the
         pre-async implementation: it is a pure extraction over the same shared
         sub-steps (``_build_forward_batch`` / ``_prepare_and_forward`` /
         ``_finalize``) that ``execute_launch`` + ``execute_resolve`` also use,
         in the same order. Async decode splits this at the post-decode boundary.
+
         """
         schedule_batch = scheduler_output.batch_data
         if schedule_batch is None:
@@ -397,12 +406,14 @@ class ModelRunner(Generic[RequestDataInput]):
         else:
             pass
         with self.execution_context(schedule_batch, isolate_sampling=True):
+            # tip 构建 sglang-ForwardBatch
             built = self.build_forward_batch(scheduler_output)
             if built is None:
                 return ModelRunnerOutput(outputs={}, req_ids=[], req_id_to_index={})
             else:
                 pass
             forward_batch, schedule_batch, is_prefill = built
+            # NOTE 【重要】forward 步骤
             batch_result = self.prepare_and_forward(
                 forward_batch, schedule_batch, scheduler_output.requests, is_prefill
             )
@@ -557,6 +568,7 @@ class ModelRunner(Generic[RequestDataInput]):
             CaptureHiddenMode,
             ForwardBatch,
         )
+        logger.info("构建 推理参数 sglang-ForwardBatch")
 
         if self.device.type != "cpu":
             torch.get_device_module(self.device).set_device(self.device.index or 0)
@@ -593,6 +605,20 @@ class ModelRunner(Generic[RequestDataInput]):
             capture_hidden_mode=capture_hidden_mode,
             return_hidden_states_before_norm=False,
         )
+        from sglang_omni.utils.logging import json_for_log
+        summary = {
+            "forward_mode": forward_batch.forward_mode.name,
+            "batch_size": forward_batch.batch_size,
+            "input_ids": forward_batch.input_ids,
+            "positions": forward_batch.positions,
+            "seq_lens": forward_batch.seq_lens,
+            "extend_seq_lens": forward_batch.extend_seq_lens_cpu,
+            "extend_prefix_lens": forward_batch.extend_prefix_lens_cpu,
+        }
+        logger.info(
+            f"构建 SGLang ForwardBatch 成功\n"
+            f"{json_for_log(summary, preview_elements=5)}"
+        )
         return forward_batch, schedule_batch, is_prefill
 
     def prepare_and_forward(
@@ -604,11 +630,17 @@ class ModelRunner(Generic[RequestDataInput]):
         *,
         is_lookahead: bool = False,
     ) -> GenerationBatchResult:
-        """Prepare hook → standard forward (if not custom) → sample-before-post
+        """
+           Prepare hook
+           → standard forward (if not custom)
+           → sample-before-post
+
         block. Returns ``batch_result``."""
         try:
             if is_prefill:
+                # tip before_xx 在自定义的子类中实现
                 self.before_prefill(forward_batch, schedule_batch, requests)
+                logger.info("ModelRunner 子类自定义推理，prefill 模式")
                 batch_result = self.custom_prefill_forward(
                     forward_batch, schedule_batch, requests
                 )
@@ -619,10 +651,14 @@ class ModelRunner(Generic[RequestDataInput]):
                     requests,
                     is_lookahead=is_lookahead,
                 )
+                logger.info("ModelRunner 子类自定义推理，decode 模式")
                 batch_result = self.custom_decode_forward(
                     forward_batch, schedule_batch, requests
                 )
             if batch_result is None:
+                logger.info("使用默认推理方式进行模型推理")
+                # 这里可能有对 sglang 的引用，tp_worker 是 ModelWorker 类型
+                #   ModelWorker.forward_batch_generation() -> SGLModelRunner.forward() -> Qwen3TTSTalker.xx() // qwen3-tts链路
                 batch_result = self.tp_worker.forward_batch_generation(forward_batch)
             else:
                 pass

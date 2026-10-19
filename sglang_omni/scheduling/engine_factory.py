@@ -356,6 +356,7 @@ class SGLangGenerationEngineBuilder(ABC, Generic[RequestDataT]):
 
             output_proc = sglang_backend.SGLangOutputProcessor()
             self.setup_runtime_resources(model, server_args)
+            # NOTE 创建 tts_engine Scheduler
             scheduler, model_runner = self.build_runtime(
                 model_worker=model_worker,
                 model=model,

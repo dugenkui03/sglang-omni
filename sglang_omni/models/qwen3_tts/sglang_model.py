@@ -509,15 +509,15 @@ class Qwen3TTSTalkerTextModel(nn.Module):
             )
         else:
             norm_before = None
-        
+
         # residual 是带合并的残差tensor
         # self.norm/RMSNorm 操作如下
-        
+
         # hidden_states = [[1,2], [2,1]]       shape=[2,2]
         # residual      = [[2,2], [2,2]]       shape=[2,2]
         # weight        = [2,1]                shape=[2]
-        
-        
+
+
         # 第一步：直接和残差tensor 相加：x = hidden_states + residual = [[3,4], [4,3]]
         # 第二步：归一化：z = x / sqrt(mean(x², 按行)) ≈ [[0.849,1.131], [1.131,0.849]]
         # 第三步：缩放投影 output = z × weight           ≈ [[1.698,1.131], [2.262,0.849]]
@@ -638,10 +638,10 @@ class Qwen3TTSPromptBuilderMixin:
     @torch.inference_mode()
     def extract_speaker_embedding(self, audio, sr):
         """
-           NOTE speaker 编码
+           NOTE speaker 编码：mel() -> embedding
             sr 即 sample rate
         """
-        logger.info("开始提取说话人特征向量(Speaker Embedding)\n%s",
+        logger.info("开始提取说话人特征向量(log-mel() -> Speaker Embedding)\n%s",
             json_for_log({"audio": audio, "sample_rate_hz": sr}))
         if sr != self.speaker_encoder_sample_rate:
             raise ValueError(
@@ -653,8 +653,8 @@ class Qwen3TTSPromptBuilderMixin:
             raise RuntimeError("Qwen3-TTS speaker encoder is not loaded")
         else:
             pass
-        # note speaker 编码: mel() -> embedding()
-        # 
+        # note speaker 编码: log-mel() -> embedding()
+        #
         # speaker_encoder_graph_runner 是 Qwen3TTSSpeakerEncoderCudaGraphRunner 类型、
         #   真正进行编码的是其组合的 speaker_encoder、 是 Qwen3TTSSpeakerEncoder 类型
         # 返回结果形状是 [2048]
@@ -1085,7 +1085,9 @@ class Qwen3TTSPromptBuilderMixin:
 
 
 class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
-    """Qwen3-TTS Base talker with SGLang-managed KV cache for the main AR loop."""
+    """Qwen3-TTS Base talker with SGLang-managed KV cache for the main AR loop.
+       NOTE 实现了 nn.Module，在此作为 sglang-ModelRunner 用来推理的模型类
+    """
 
     # The outer forward substitutes ForwardBatch.mrope_positions whenever they
     # are present. Prefill CUDA graph runners capture the inner text model
@@ -1144,7 +1146,7 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
                 root_config.speaker_encoder_config
             )
             self.speaker_encoder_graph_runner = Qwen3TTSSpeakerEncoderCudaGraphRunner(
-                self.speaker_encoder, 
+                self.speaker_encoder,
                 sample_rate=self.speaker_encoder_sample_rate
             )
         else:
@@ -2431,7 +2433,7 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             ):
                 table.copy_(self.code_predictor.project_input(embedding.weight))
 
-# NOTE 声明该模块的入口类模型 
+# NOTE 声明该模块的入口类模型
 EntryClass = Qwen3TTSTalker
 # OmniScheduler
 # └─ model_runner：Qwen3TTSModelRunner，处理 TTS 推理前后逻辑

@@ -73,7 +73,11 @@ def ensure_mrope_positions(
 
 
 class Qwen3TTSModelRunner(ModelRunner):
-    """Runs Qwen3-TTS AR steps and stores generated codec frames per request."""
+    """Runs Qwen3-TTS AR steps and stores generated codec frames per request.
+
+       NOTE 被 OmniScheduler 组合持有，他的 execute 方法是 _run_batch 核心调用
+          【重要】这里的 ModelRunner 是 sglang-omni 自己定义的类
+    """
 
     model: Qwen3TTSTalker
     tp_worker: ModelWorker

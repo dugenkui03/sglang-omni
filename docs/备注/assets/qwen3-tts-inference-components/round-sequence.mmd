@@ -1,0 +1,25 @@
+sequenceDiagram
+    participant S as OmniScheduler
+    participant T as Qwen3TTSModelRunner
+    participant W as ModelWorker
+    participant R as SGLModelRunner
+    participant M as Qwen3TTSTalker
+
+    Note over S,M: 一次 execute 是一轮；完整请求可能重复多轮
+    S->>T: ① ModelRunner.execute()（Omni 声明）
+    Note over T: ModelRunner.prepare_and_forward()（Omni）调用 TTS 前置钩子
+    T->>W: ② ModelWorker.forward_batch_generation()
+    W->>R: ③ ModelRunner.forward()（SGLang 声明）
+    Note over R: ModelRunner._forward_raw() 分流；此处展开普通执行
+    R->>M: ④ Qwen3TTSTalker.forward()（经 EagerRunner）
+    M-->>R: logits、hidden states
+    R-->>W: 底层前向结果
+    W-->>T: GenerationBatchResult
+    T->>T: ⑤ Qwen3TTSModelRunner.sample_next_token_ids()
+    Note over T: 父类采样流程最终调用 SGLang ModelRunner.sample()
+    T->>M: ⑥ Qwen3TTSTalker.code_predictor_forward()
+    Note over T,M: 调用来自 Qwen3TTSModelRunner.collect_codes()，补齐本帧码本
+    M-->>T: 本帧完整 codes、反馈 embedding
+    T->>T: ⑦ ModelRunner.finalize()（Omni 声明）
+    Note over T: Qwen3TTSModelRunner.post_process_outputs() 保存有效帧
+    T-->>S: ModelRunnerOutput
