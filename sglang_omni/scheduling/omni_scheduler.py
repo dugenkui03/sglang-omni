@@ -2453,7 +2453,7 @@ class OmniScheduler(Generic[RequestDataT]):
                     data=result,
                 )
             )
-            logger.info("结果放到 OmniScheduler.outbox 中，当前 outbox 大小%s",len(self.outbox))
+            logger.info(f"结果放到 OmniScheduler.outbox 中，当前队列大小约为 {self.outbox.qsize()}")
 
     def on_stream_chunk(self, request_id: str, chunk: StreamItem) -> None:
         if request_id in self.completed_request_ids:

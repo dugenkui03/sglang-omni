@@ -1676,7 +1676,7 @@ class Stage:
                     metadata={"terminal": False, "next": list(next_stages)},
                 )
                 # 发送消息给到后边的 stage
-                logger.info("%s 任务执行结束，将结果发送给其他 stages: %s", self.name, next_stages.model_dump_json(indent=2))
+                logger.info(f"{self.name} 任务执行结束，将结果发送给其他 stages: {next_stages}")
                 for target in next_stages:
                     await self.send_to_stage(
                         request_id,
