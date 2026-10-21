@@ -350,7 +350,7 @@ class ModelWorker:
     ):
         from sglang.srt.managers.scheduler import GenerationBatchResult
 
-        logger.info("使用 sglang_omni/model_runner/model_worker.py#ModelWorker.forward_batch_generation(...) 进行推理")
+        logger.info("使用 %s 进行推理",type(self).__name__)
         if self.dllm_algorithm is not None:
             logger.info("扩散模型链路/dllm mode")
             algo_states = None

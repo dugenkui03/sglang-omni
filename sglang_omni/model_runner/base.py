@@ -153,6 +153,17 @@ class ModelRunner(Generic[RequestDataInput]):
     Subclasses provide phase-specific behavior:
       - prefill hooks for extend/prompt processing
       - decode hooks for single-step autoregressive decode processing
+
+    tip 当前类有推理核心链路，可作为默认实现：
+        子类通过钩子方法(Hook)定制不同阶段的推理行为：
+        Prefill/Extend:
+         - before_prefill()：前向计算前准备输入，如构造输入向量(Embedding)。
+         - 【重点】custom_prefill_forward()：可选的自定义前向计算；返回 None 时使用标准路径。
+         - post_prefill()：主模型前向计算完成后的处理。
+        Decode(执行单步自回归生成):
+         - before_decode()：前向计算前准备本轮输入，如上一轮结果的反馈向量。
+         - 【重点】custom_decode_forward()：可选的自定义前向计算；返回 None 时使用标准路径。
+         - post_decode()：主模型前向计算完成后的处理。
     """
 
     def __init__(
@@ -393,6 +404,8 @@ class ModelRunner(Generic[RequestDataInput]):
             → sample
             → output.
 
+        tip qwen3-tts 链路：ModelRunner.execute -> ModelRunner.prepare_and_forward ->
+
         Used when async decode is disabled. Behavior is byte-identical to the
         pre-async implementation: it is a pure extraction over the same shared
         sub-steps (``_build_forward_batch`` / ``_prepare_and_forward`` /
@@ -415,7 +428,10 @@ class ModelRunner(Generic[RequestDataInput]):
             forward_batch, schedule_batch, is_prefill = built
             # NOTE 【重要】forward 步骤
             batch_result = self.prepare_and_forward(
-                forward_batch, schedule_batch, scheduler_output.requests, is_prefill
+                forward_batch, # 请求参数
+                schedule_batch, # 请求参数
+                scheduler_output.requests, # 请求参数
+                is_prefill # 是否是 prefill
             )
             if is_prefill:
                 self.post_prefill(
@@ -657,8 +673,8 @@ class ModelRunner(Generic[RequestDataInput]):
                 )
             if batch_result is None:
                 logger.info("使用默认推理方式进行模型推理")
-                # 这里可能有对 sglang 的引用，tp_worker 是 ModelWorker 类型
-                #   ModelWorker.forward_batch_generation() -> SGLModelRunner.forward() -> Qwen3TTSTalker.xx() // qwen3-tts链路
+                # NOTE 关注这里就行
+                #  ModelWorker.forward_batch_generation() -> SGLModelRunner.forward() -> Qwen3TTSTalker.xx() // qwen3-tts链路
                 batch_result = self.tp_worker.forward_batch_generation(forward_batch)
             else:
                 pass

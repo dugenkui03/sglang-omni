@@ -22,6 +22,7 @@ from sglang_omni.utils.gpu_memory import (
     get_gpu_device_info,
     get_process_gpu_memory_bytes,
 )
+from sglang_omni.utils.logging import json_for_log
 
 logger = logging.getLogger(__name__)
 _PREFILL_RUNNER_DISPATCH_LOCK = Lock()
@@ -293,7 +294,7 @@ class SGLModelRunner(ModelRunner):
         contracts; model kwargs are the supported late-bound transport used by
         both eager execution and breakable prefill graph capture/replay.
 
-        TODO 这个方法会在 super.forward() 的推理链路被使用
+        NOTE 这个方法会在 super.forward() 的推理链路被使用
             ModelRunner.forward()                         【SGLang】
             │  self 始终是 SGLModelRunner 实例
             → ModelRunner._forward_raw()                   【SGLang】
@@ -306,6 +307,8 @@ class SGLModelRunner(ModelRunner):
                 └─ ② Qwen3TTSTalker.forward()
                      → 使用这些参数执行模型计算
         """
+
+        # 还是用到 super class 了啊
         kwargs = super()._extend_forward_kwargs(forward_batch, pp_proxy_tensors)
         prefill_inputs = get_omni_prefill_inputs(forward_batch)
         if prefill_inputs is None:
@@ -337,6 +340,10 @@ class SGLModelRunner(ModelRunner):
             )
         else:
             pass
+        logger.info(
+            f"SGLModelRunner 为模型推理准备的额外输入：\n"
+            f"{json_for_log(kwargs)}"
+        )
         return kwargs
 
     def _resolve_draft_load_format(self) -> str | None:

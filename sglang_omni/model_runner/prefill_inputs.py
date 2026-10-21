@@ -69,6 +69,7 @@ def get_omni_prefill_inputs(
     forward_batch: ForwardBatch | None,
 ) -> OmniPrefillInputs | None:
     """Return the private Omni payload, or None when none is attached."""
+    # _OMNI_PREFILL_INPUTS_ATTR = _sglang_omni_prefill_inputs
     return getattr(forward_batch, _OMNI_PREFILL_INPUTS_ATTR, None)
 
 

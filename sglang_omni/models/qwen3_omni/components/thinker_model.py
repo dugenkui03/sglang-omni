@@ -246,6 +246,7 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         self.used_fused_qk_norm_rope_last_call = False
         self.used_fused_set_kv_buffer_last_call = False
 
+        # NOTE 这里是 RadixAttention
         self.attn = RadixAttention(
             self.num_heads,
             self.head_dim,
@@ -265,26 +266,19 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
     ):
-        """准备 QKV 和位置编码，沿用外层的轮次及层日志范围。"""
+        """
+           NOTE 获得 QKV 结果并对其进行归一化
+        """
         qkv, _ = self.qkv_proj(hidden_states)
         if should_log_inference_details():
-            logger.info(
-                f"注意力层 QKV 投影，layer_id={self.layer_id}\n"
-                f"hidden_states.shape={hidden_states.shape}, qkv.shape={qkv.shape}"
-            )
-        else:
-            pass
+            logger.info(f"注意力层 QKV 投影，layer_id={self.layer_id}\n hidden_states.shape={hidden_states.shape}, qkv.shape={qkv.shape}")
 
         q, k, v = self.apply_qk_norm_rope(qkv, positions, forward_batch)
         if should_log_inference_details():
-            logger.info(
-                f"完成 Q/K 归一化与旋转位置编码(RoPE)，layer_id={self.layer_id}\n"
-                f"q.shape={q.shape}, k.shape={k.shape}, v.shape={v.shape}"
-            )
-        else:
-            pass
+            logger.info(f" qkv 归一化和拆分，layer_id={self.layer_id}\n q.shape={q.shape}, k.shape={k.shape}, v.shape={v.shape}")
 
         inner_state = q, k, v, forward_batch
+        # tip python 方法只能返回一个对象，所谓返回多个对象其实是自动打包到一个 tuple 中了
         return None, forward_batch, inner_state
 
     def apply_qk_norm_rope(self, qkv, positions, forward_batch):
@@ -368,6 +362,7 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
             return hidden_states, forward_batch, None
         else:
             pass
+        # 获取 qkv 并对其进行归一化
         return self.forward_prepare_native(
             positions=positions,
             hidden_states=hidden_states,
@@ -375,18 +370,25 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         )
 
     def forward_core(self, intermediate_state):
-        """完成注意力加权及投影，选中层之外只省略日志。"""
+        """
+           NOTE 注意力计算，此时已经获取到了 qkv 向量
+                1. 计算 qk 权重并对 v 进行加权计算
+                2. 对加权 v' 进行投影
+        """
+        # tip 这里语法是 tuple unpacking
         hidden_states, forward_batch, inner_state = intermediate_state
         if inner_state is None:
             return hidden_states
         else:
             pass
 
+        # 也是 tuple unpacking
         q, k, v, fb = inner_state
 
         must_save_kv = self.used_fused_qk_norm_rope_last_call
         save_kv_cache = must_save_kv or not self.used_fused_set_kv_buffer_last_call
         # NOTE 就是计算 qk 权重、给v加权结算结果的那一套
+        #   self.attn 是 RadixAttention
         attn_output = self.attn(
             q,
             k,
@@ -395,12 +397,8 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
             save_kv_cache=save_kv_cache,
         )
         if should_log_inference_details():
-            logger.info(
-                f"完成注意力加权计算，layer_id={self.layer_id}\n"
-                f"q.shape={q.shape}, k.shape={k.shape}, attn_output.shape={attn_output.shape}"
-            )
-        else:
-            pass
+            logger.info(f"完成注意力加权计算，layer_id={self.layer_id}\n q.shape={q.shape}, k.shape={k.shape}, attn_output.shape={attn_output.shape}")
+
         # Note:(Chenchen Hong) cast attn output to the compute dtype (v.dtype),
         # not o_proj.weight.dtype: for FP8 weights the latter feeds an fp8
         # activation to the quantizer, which post1's sgl_kernel rejects.
@@ -408,14 +406,10 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
             attn_output = attn_output.to(dtype=v.dtype)
         else:
             pass
+        # NOTE
         output, _ = self.o_proj(attn_output)
         if should_log_inference_details():
-            logger.info(
-                f"完成注意力输出投影，layer_id={self.layer_id}\n"
-                f"attn_output.shape={attn_output.shape}, output.shape={output.shape}"
-            )
-        else:
-            pass
+            logger.info(f"完成注意力输出投影，layer_id={self.layer_id}\n attn_output.shape={attn_output.shape}, output.shape={output.shape}")
         return output
 
     def forward(
@@ -424,16 +418,16 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Module):
         hidden_states: torch.Tensor,
         forward_batch: ForwardBatch,
     ) -> torch.Tensor:
-        """执行注意力模块，复用调用方设定的详细日志范围。"""
+        # NOTE qwen3 tts 注意力计算的入口
         if should_log_inference_details():
-            logger.info(f"开始 Transformer 注意力层计算，layer_id={self.layer_id}")
-        else:
-            pass
+            logger.info(f"开始 Transformer 注意力层计算，layer_id={self.layer_id}, hidden_states.shape={hidden_states.shape}")
+        # 获取 qkv 并进行归一化
         s = self.forward_prepare(
             positions=positions,
             hidden_states=hidden_states,
             forward_batch=forward_batch,
         )
+
         return self.forward_core(s)
 
 

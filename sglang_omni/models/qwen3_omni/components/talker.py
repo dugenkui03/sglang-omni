@@ -36,6 +36,7 @@ from sglang_omni.sampling.seed import (
     derive_sampling_seed,
     resolve_row_seed,
 )
+from sglang_omni.utils.logging import json_for_log
 from sglang_omni.utils.predictor_layers import (
     add_rmsnorm_rounded,
     codebook_step,
@@ -221,8 +222,12 @@ class Qwen3OmniMoeTalkerDenseMLP(nn.Module):
         intermediate_size: int,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
-    ):
+        layer_id: int = 0,
+    ) -> None:
+        """创建 SwiGLU MLP，并保存从零开始的层编号供日志使用。"""
         super().__init__()
+        self.layer_id = layer_id
+        # 升维
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
@@ -230,6 +235,7 @@ class Qwen3OmniMoeTalkerDenseMLP(nn.Module):
             quant_config=quant_config,
             prefix=add_prefix("gate_up_proj", prefix),
         )
+        # 降维
         self.down_proj = RowParallelLinear(
             intermediate_size,
             hidden_size,
@@ -237,12 +243,20 @@ class Qwen3OmniMoeTalkerDenseMLP(nn.Module):
             quant_config=quant_config,
             prefix=add_prefix("down_proj", prefix),
         )
+        # 门控激活
         self.act_fn = SiluAndMul()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """执行升维、门控激活和降维，仅记录选中层的形状与少量数值。"""
         gate_up, _ = self.gate_up_proj(x)
-        x = self.act_fn(gate_up)
-        x, _ = self.down_proj(x)
+        if self.layer_id == 1 and logger.isEnabledFor(logging.INFO):
+            logger.info(f"MLP 升维，layer_id={self.layer_id}，输入 shape={tuple(x.shape)}，gate/up 合并 shape={tuple(gate_up.shape)}")
+        activated = self.act_fn(gate_up)
+        if self.layer_id == 1 and logger.isEnabledFor(logging.INFO):
+            logger.info(f"MLP 门控激活(SwiGLU)前后对比，layer_id={self.layer_id}，最多预览前 5 个值\n{json_for_log({'gate_before': gate_up[..., :gate_up.shape[-1] // 2], 'up_before': gate_up[..., gate_up.shape[-1] // 2:], 'after': activated}, preview_elements=5)}")
+        x, _ = self.down_proj(activated)
+        if self.layer_id == 1 and logger.isEnabledFor(logging.INFO):
+            logger.info(f"MLP 降维，layer_id={self.layer_id}，输入 shape={tuple(activated.shape)}，输出 shape={tuple(x.shape)}")
         return x
 
 
@@ -566,6 +580,7 @@ class Qwen3OmniMoeTalkerCodePredictor(nn.Module):
                 cp_config.intermediate_size,
                 quant_config=quant_config,
                 prefix=add_prefix(f"model.layers.{idx}.mlp", prefix),
+                layer_id=idx,
             )
             layer.input_layernorm = RMSNorm(
                 cp_config.hidden_size, eps=cp_config.rms_norm_eps

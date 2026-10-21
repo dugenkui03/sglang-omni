@@ -56,11 +56,7 @@ from sglang_omni.platforms.device_graph import ReplayableGraph
 from sglang_omni.scheduling.types import SchedulerRequest
 from sglang_omni.utils.logging import json_for_log, summarize_for_log
 from sglang_omni.utils.predictor_layers import resolve_fused_predictor_layers
-from sglang_omni.utils.request_context import (
-    inference_log_context,
-    should_log_inference_details,
-    should_log_transformer_layer,
-)
+from sglang_omni.utils.request_context import should_log_inference_details
 from sglang_omni.vendor.sglang.core import ForwardBatch
 from sglang_omni.vendor.sglang.layers import ReplicatedLinear, RMSNorm
 from sglang_omni.vendor.sglang.models import FusedSetKVBufferArg, apply_qk_norm
@@ -298,6 +294,7 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
             config.hidden_size,
             config.intermediate_size,
             prefix=add_prefix("mlp", prefix),
+            layer_id=layer_id,
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(
@@ -311,74 +308,32 @@ class Qwen3TTSTalkerDecoderLayer(nn.Module):
         forward_batch: ForwardBatch,
         residual: Optional[torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """执行完整层计算，仅为首轮选中的层构造详细日志。"""
-        log_details = should_log_transformer_layer(self.layer_id, self.layer_count)
-        log_norm = log_details and logger.isEnabledFor(logging.INFO)
-        preview_elements = 5 if self.layer_id == 0 else 0
-        if log_norm:
-            logger.info(
-                f"开始 Transformer 层计算\n"
-                f"{json_for_log({'layer_id': self.layer_id, 'hidden_states': hidden_states})}"
-            )
-            norm_before = summarize_for_log(
-                {"hidden_states": hidden_states, "residual": residual},
-                preview_elements=preview_elements,
-            )
-        else:
-            norm_before = None
+        """执行当前 Transformer 层，仅第一层打印本方法的日志。"""
+        should_log = self.layer_id == 0
+
+        # NOTE step 1 输入归一化
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
+            if should_log:
+                logger.info(f"hidden_states 归一化：before={tuple(residual.shape)},result={tuple(hidden_states.shape)}")
         else:
             hidden_states, residual = self.input_layernorm(hidden_states, residual)
-        if log_norm:
-            norm_after = summarize_for_log(
-                {"hidden_states": hidden_states, "residual": residual},
-                preview_elements=preview_elements,
-            )
-            logger.info(
-                f"输入归一化(Norm)前后对比\n"
-                f"{json_for_log({'layer_id': self.layer_id, 'before': norm_before, 'after': norm_after})}"
-            )
-        else:
-            pass
 
-        # NOTE 注意力机制的实现，todo Qwen3OmniMoeThinkerTextAttention 类
-        if log_norm:
-            logger.info(f"开始注意力计算，layer_id={self.layer_id}")
-        else:
-            pass
-        with inference_log_context(log_details):
-            hidden_states = self.self_attn(
-                positions=positions,
-                hidden_states=hidden_states,
-                forward_batch=forward_batch,
-            )
-        if log_norm:
-            logger.info(
-                f"完成注意力计算\n"
-                f"{json_for_log({'layer_id': self.layer_id, 'hidden_states': hidden_states})}"
-            )
-            norm_before = summarize_for_log(
-                {"hidden_states": hidden_states, "residual": residual},
-                preview_elements=preview_elements,
-            )
-        else:
-            pass
-        # TODO 这是啥？
+        old_hidden_states = hidden_states
+        # NOTE step 2 注意力计算
+        hidden_states = self.self_attn(
+            positions=positions,
+            hidden_states=hidden_states,
+            forward_batch=forward_batch,
+        )
+        if should_log:
+            logger.info("transformer layer 计算： old hidden_states shape:%s，result hidden_states:%s",{tuple(old_hidden_states.shape)},{tuple(hidden_states.shape)})
+        # NOTE step 3 注意力输出归一化
         hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
-        if log_norm:
-            norm_after = summarize_for_log(
-                {"hidden_states": hidden_states, "residual": residual},
-                preview_elements=preview_elements,
-            )
-            logger.info(
-                f"注意力后归一化(Norm)前后对比\n"
-                f"{json_for_log({'layer_id': self.layer_id, 'before': norm_before, 'after': norm_after})}"
-            )
-        else:
-            pass
-        # TODO mlp Qwen3OmniMoeTalkerDenseMLP
+        if should_log:
+            logger.info("对 transformer layer 结果进行归一化，hidden states shape:%s, residual shape:%s",{tuple(hidden_states.shape)},{tuple(residual.shape)})
+        # NOTE MLP
         hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
 
@@ -418,12 +373,14 @@ class Qwen3TTSTalkerTextModel(nn.Module):
             dtype=torch.bool,
             device=self.codec_embedding.weight.device,
         )
+        # tip 也是 Module 类型
         self.decode_feedback_embedding = nn.Embedding(
             max_batch_size,
             config.hidden_size,
             device=self.codec_embedding.weight.device,
             dtype=self.codec_embedding.weight.dtype,
         )
+        logger.info("还不知道 decode_feedback_embedding 啥意思，但是他的形状是：%s,%s",max_batch_size, config.hidden_size)
         self.decode_feedback_embedding.weight.requires_grad_(False)
 
     def get_input_embeddings(self) -> nn.Embedding:
@@ -456,18 +413,16 @@ class Qwen3TTSTalkerTextModel(nn.Module):
         log_details = should_log_inference_details() and logger.isEnabledFor(
             logging.INFO
         )
-        if log_details:
-            logger.info(f"进入模型主链路\n{json_for_log({'input_ids': input_ids})}")
-        else:
-            pass
         forward_mode = getattr(forward_batch, "forward_mode", None)
+        if log_details:
+            logger.info(f"Qwen3TTSTalkerTextModel, 进入模型主链路\n{json_for_log({'input_ids': input_ids})}，forward_mode 是{forward_mode}")
         is_decode = forward_mode is not None and forward_mode.is_decode()
         if input_embeds is None:
             if is_decode:
                 hidden_states = self.decode_feedback_embedding(input_ids)
                 if log_details:
                     logger.info(
-                        f"解码(Decode)输入\n"
+                        f"解码(Decode)输入向量化：\n"
                         f"{json_for_log({'input_ids': input_ids, 'hidden_states': hidden_states})}"
                     )
                 else:
@@ -476,7 +431,7 @@ class Qwen3TTSTalkerTextModel(nn.Module):
                 hidden_states = self.build_input_hidden_states(input_ids)
                 if log_details:
                     logger.info(
-                        f"预填充(Prefill)输入\n"
+                        f"预填充(Prefill)输入向量化：\n"
                         f"{json_for_log({'input_ids': input_ids, 'hidden_states': hidden_states})}"
                     )
                 else:
@@ -485,7 +440,7 @@ class Qwen3TTSTalkerTextModel(nn.Module):
             hidden_states = input_embeds
 
         residual = None
-        layers = self.layers # NTOE Qwen3TTSTalkerDecoderLayer 类型
+        layers = self.layers # NOTE Qwen3TTSTalkerDecoderLayer 类型
         before_layer_shape = list(hidden_states.shape)
         for idx in range(self.start_layer, self.end_layer):
             hidden_states, residual = layers[idx](
@@ -502,8 +457,7 @@ class Qwen3TTSTalkerTextModel(nn.Module):
         else:
             pass
 
-        log_norm = log_details
-        if log_norm:
+        if log_details:
             norm_before = summarize_for_log(
                 {"hidden_states": hidden_states, "residual": residual}, preview_elements=5
             )
@@ -525,7 +479,7 @@ class Qwen3TTSTalkerTextModel(nn.Module):
             hidden_states = self.norm(hidden_states)
         else:
             hidden_states, residual = self.norm(hidden_states, residual)
-        if log_norm:
+        if log_details:
             norm_after = summarize_for_log(
                 {"hidden_states": hidden_states, "residual": residual}, preview_elements=5
             )
@@ -1422,7 +1376,10 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             logging.INFO
         )
         if log_details:
-            logger.info(f"开始推理\n{json_for_log({'input_ids': input_ids})}")
+            logger.info(
+                f"Qwen3TTS, 开始推理\n"
+                f"{json_for_log({'input_ids': input_ids, 'input_embeds': input_embeds})}"
+            )
         else:
             pass
         del input_embeds_are_projected, omni_prefill_rids
@@ -1431,7 +1388,7 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         else:
             pass
 
-        # Qwen3TTSTalkerTextModel 类型，整个推理流程都在里边
+        # NOTE Qwen3TTSTalkerTextModel 类型，整个推理流程都在里边
         hidden_states = self.model(
             input_ids=input_ids,
             positions=positions,
@@ -2436,7 +2393,7 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
 # NOTE 声明该模块的入口类模型
 EntryClass = Qwen3TTSTalker
 # OmniScheduler
-# └─ model_runner：Qwen3TTSModelRunner，处理 TTS 推理前后逻辑
+# └─ model_runner：Qwen3TTSModelRunner(sglang-omni/ModelRunner) 默认的核心链路在父类实现，但是子类
 #     └─ tp_worker：ModelWorker
 #         └─ model_runner：SGLModelRunner，继承 SGLang ModelRunner
 #             └─ model：Qwen3TTSTalker  ← 真正的模型实例
