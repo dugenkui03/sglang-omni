@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
+import logging
 from types import ModuleType
 from typing import TYPE_CHECKING
 
 import torch
-import logging
 
 from sglang_omni.model_runner.base import ModelRunner
 from sglang_omni.model_runner.model_worker import ModelWorker
@@ -22,6 +22,7 @@ from sglang_omni.scheduling.types import (
     SchedulerRequest,
 )
 from sglang_omni.utils.device import supports_device_streams
+from sglang_omni.utils.request_context import request_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -269,14 +270,17 @@ class Qwen3TTSModelRunner(ModelRunner):
         schedule_batch: ScheduleBatch | None,
         requests: list[SchedulerRequest],
     ) -> None:
-        if self.should_log(result):
-            logger.info("开始预测剩下的15个码本")
-
+        """收集当前帧码本，仅为 Prefill 和首次 Decode 的请求记录日志。"""
         self.has_pending_code_step = False
         if result.next_token_ids is None:
             return
         else:
             pass
+
+        for request in requests:
+            with request_log_context(request.request_id):
+                if self.should_log(request):
+                    logger.info("开始预测剩下的15个码本")
 
         # tip result.next_token_ids 只是表示一个音频帧的16个码本中的1个
         #
@@ -302,8 +306,10 @@ class Qwen3TTSModelRunner(ModelRunner):
         self.stage_token_ids(result, result.next_token_ids)
 
         hidden = result.logits_output.hidden_states
-        if self.should_log(result):
-            logger.info("推测剩余15个码本日志：result.logits_output.hidden_states.shape %s", hidden.shape)
+        for row_index, request in enumerate(requests):
+            with request_log_context(request.request_id):
+                if self.should_log(request):
+                    logger.info(f"预测剩余15个码本：本请求 hidden_states.shape={tuple(hidden[row_index:row_index + 1].shape)}")
         if isinstance(hidden, torch.Tensor) and hidden.ndim == 2:
             hidden = hidden.unsqueeze(1)
         else:
