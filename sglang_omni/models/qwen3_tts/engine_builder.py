@@ -141,6 +141,10 @@ def derive_silence_codec_ids(
 
 
 class Qwen3TtsEngineBuilder(TtsEngineBuilder[Qwen3TTSSGLangRequestData]):
+    """
+       继承关系：Qwen3TtsEngineBuilder -> TtsEngineBuilder -> SGLangGenerationEngineBuilder
+    """
+
     model_name = "Qwen3-TTS"
     context_length = 8192
     model_arch_override = "Qwen3TTSTalker"

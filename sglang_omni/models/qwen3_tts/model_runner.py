@@ -315,9 +315,10 @@ class Qwen3TTSModelRunner(ModelRunner):
         else:
             pass
         semantic_positions = self.sample_positions(forward_batch, layer0_codes.device)
+        # note 进行15个码本的预测
         self.model.code_predictor_forward(
-            layer0_codes,
-            hidden,
+            layer0_codes, # 主干模型预测的 token
+            hidden, # 主干模型输出的 hidden states
             semantic_positions=semantic_positions,
         )
         self.has_pending_code_step = True

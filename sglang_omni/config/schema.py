@@ -349,6 +349,7 @@ class StageConfig(BaseModel):
     route_fn: str | None = None
     gpu: int | list[int] | None = None
     tp_size: int = Field(default=1, ge=1)
+    # NOTE Stage 的进程
     process: str | None = None
     gpu_memory_fraction: float | None = Field(
         default=None,

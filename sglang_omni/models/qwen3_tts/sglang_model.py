@@ -1432,14 +1432,30 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         talker_hidden: torch.Tensor,
         semantic_positions: torch.Tensor | None = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+           NOTE 将主干模型最后一层 transformer layer 输出的 hidden_state 
+                    和 通过 hidden state 通过 weight_lm/采样 预测的 codebook/token/layer0_codes
+                    来进一步预测这个音频帧其余的15个码本
+
+                因为这个函数是批处理函数，所以输入 layer0_codes 和 talker_hidden 第一个维度是 batch_size
+        """
+
+        # NOTE ndim 是维度数；一维 [batch_size] 用 unsqueeze(1) 在第 1 维补长度 1 的序列轴 -> [B, 1]
         if layer0_codes.ndim == 1:
             layer0_codes = layer0_codes.unsqueeze(1)
         else:
             pass
+        # NOTE 二维 [batch_size, hidden_size] 用 unsqueeze(1) 补序列轴 -> [batch_size, 1, hidden_size]
+        #
+        #   [batch_size, hidden_size] 说明：每个请求输出 [1, hidden_size] 的 hidden states
+        #   分别和 weight_lm.T [hidden_size, vocab_size] 相乘分别得到 [1, vocab_size] 的 logits
+        #       其中 vocab_size 个位置、每个位置对应一个码本出现的分数
         if talker_hidden.ndim == 2:
             talker_hidden = talker_hidden.unsqueeze(1)
         else:
             pass
+
+        # tip CUDA Graph 加速链路
         graph_result = self.predictor_forward_graphed(
             layer0_codes,
             talker_hidden,
@@ -1449,6 +1465,8 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             return graph_result
         else:
             pass
+        # NOTE Eager 模式，普通推理获取 15 个码本
+        logger.info(f"Eager 模式，普通推理获取 15 个码本，layer0_codes.shape={layer0_codes.shape}, talker_hidden.shape={talker_hidden.shape}")
         result_codes, summed_embeddings = self.code_predictor_forward_incremental(
             layer0_codes=layer0_codes,
             talker_hidden=talker_hidden,

@@ -311,18 +311,25 @@ def create_sglang_tts_engine_executor(
     from sglang_omni.models.qwen3_tts.engine_builder import Qwen3TtsEngineBuilder
 
     return Qwen3TtsEngineBuilder(
+        # 指定音频编解码器(Speech Tokenizer) 的注意力实现，例如 sdpa
         attn_implementation=attn_implementation,
+        # 预填充合批(Prefill Coalescing)的目标请求数。请求不足时，可以暂缓新一轮 Prefill，等待更多请求一起执行
+        #   0：关闭主动等待，仍然正常组批；设为 4 表示尝试凑到 4 个
         prefill_coalesce_requests=prefill_coalesce_requests,
+        # 上述凑批的等待窗口，单位毫秒。达到目标数或等待超时，就进入正常组批流程
+        #   60.0；只有启用合批等待时才有作用
         prefill_coalesce_wait_ms=prefill_coalesce_wait_ms,
+        # 参考音频编码器的 CUDA 图(CUDA Graph)长度桶，单位为 Codec 帧
         reference_encoder_cuda_graph_bucket_frames=(
             reference_encoder_cuda_graph_bucket_frames
         ),
+        # 在生成开头的 N 个音频帧中，屏蔽首码本的静音候选编码，减少开头长时间静音。当前用于 Base 的 x-vector-only 声音克隆
         leading_silence_mask_frames=leading_silence_mask_frames,
     ).build(
-        model_path,
-        device=device,
-        gpu_id=gpu_id,
-        dtype=dtype,
+        model_path, # 模型路径
+        device=device, # 设备
+        gpu_id=gpu_id, # tp gpu编号
+        dtype=dtype, # 数据类型
         server_args_overrides=server_args_overrides,
     )
 
