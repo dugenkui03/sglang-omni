@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import logging
 import torch
 import torch.nn.functional as F
 
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 else:
     pass
 
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Qwen3TTSIncrementalCodecStateSpec:
@@ -855,6 +857,8 @@ class Qwen3TTSIncrementalDecoder:
         *,
         compiled: bool = False,
     ) -> torch.Tensor:
+        logger.info("qwen3-tts 开始音频解码：codes.shape=%s, frame_position=%s, context_len=%s, kv_layers=%s, kv_shape=%s, conv_histories=%s, transconv_overlaps=%s",
+            tuple(codes.shape), state.frame_position, state.transformer_context_length, len(state.transformer_keys), None if not state.transformer_keys else tuple(next(iter(state.transformer_keys.values())).shape), {key: tuple(value.shape) for key, value in state.conv_histories.items()}, {key: tuple(value.shape) for key, value in state.transconv_overlaps.items()})
         if codes.ndim != 3:
             raise ValueError(
                 "Qwen3-TTS incremental codec decoding requires codes shaped [B, Q, T]"

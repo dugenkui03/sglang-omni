@@ -110,7 +110,11 @@ def predictor_gqa_attention(
     num_key_value_heads: int,
     is_causal: bool,
 ) -> torch.Tensor:
-    """Run Predictor GQA, preferring Ascend's inference kernel on NPU for one query."""
+    """Run Predictor GQA, preferring Ascend's inference kernel on NPU for one query.
+
+        运行预测器(Predictor)的分组查询注意力(Grouped-Query Attention, GQA)，在神经网络处理器(Neural Processing Unit, NPU)
+            上进行单查询(Single Query / One Query)计算时，优先使用昇腾(Ascend)的推理算子/内核(Inference Kernel)。
+    """
     if q.device.type == "npu" and not is_causal:
         fused_attention = getattr(
             getattr(torch.ops, "npu", None),
@@ -133,10 +137,14 @@ def predictor_gqa_attention(
     else:
         pass
 
+    # NOTE scaled_dot_product_attention 是 PyTorch 2.0+ 官方内置的标准通用注意力函数
     return torch.nn.functional.scaled_dot_product_attention(
-        q,
+        # q.shape = [batch_size, num_heads, q_len, head_dim] head num 和 head dim 都在q形状中
+        q, 
+        # key 和 value同理：key.shape / value.shape = [batch_size, num_kv_heads, kv_len, head_dim]
         key,
         value,
+        # 是否加下三角因果掩码
         is_causal=is_causal,
         enable_gqa=True,
     )
@@ -493,6 +501,9 @@ class Qwen3TTSTalkerTextModel(nn.Module):
 
 
 class Qwen3TTSCodePredictor(nn.Module):
+
+
+
     def __init__(self, config: "Qwen3TTSTalkerConfig", prefix: str = "") -> None:
         super().__init__()
         self.config = config
@@ -528,16 +539,23 @@ class Qwen3TTSCodePredictor(nn.Module):
         )
         if cp_config.hidden_size != config.hidden_size:
             self.small_to_mtp_projection = nn.Linear(
-                config.hidden_size, cp_config.hidden_size, bias=True
+                config.hidden_size, # 输入维度
+                cp_config.hidden_size, # 输出维度，cp 是 Code Predictor（码本预测器）
+                bias=True # 是否需要偏置
             )
         else:
             self.small_to_mtp_projection = None
 
     def project_input(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """ 
+           code_predictor_forward_incremental 调用过来的时候：
+                hidden_states 同时包含本次推理第一个码本信息和hidden states 信息
+        """
         if self.small_to_mtp_projection is None:
             return hidden_states
         else:
             pass
+        # mtp： multi-token prediction
         return self.small_to_mtp_projection(hidden_states)
 
 
@@ -1863,6 +1881,9 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         talker_hidden: torch.Tensor,
         semantic_positions: torch.Tensor | None = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+           NOTE 获取剩下的 15 个码本
+        """
         if layer0_codes.ndim == 1:
             layer0_codes = layer0_codes.unsqueeze(1)
         else:
@@ -1872,6 +1893,7 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         else:
             pass
 
+        # tip ndim == 1 的话：[batch_size] 用 unsqueeze(1) 补序列轴 -> [batch_size, 1]
         batch_size, seq_len = layer0_codes.shape
         semantic_positions = self.normalize_semantic_positions(
             semantic_positions,
@@ -1897,6 +1919,7 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         else:
             projected_buffer = self.predictor_projected_buffer[:batch_size]
 
+        # 这里好像横位1
         for pos in range(seq_len):
             layer0_code = layer0_codes[:, pos : pos + 1]
             layer0_embed = self.get_input_embeddings()(layer0_code).to(
@@ -1911,9 +1934,13 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             # note(ratish): the talker hidden and the layer 0 embedding are the
             # first two tokens; one causal pass reads the predictor weights once.
             pair_embeds = self.code_predictor.project_input(
+                # cat 之后的形状是 [batch_size, 2, hidden_size]
                 torch.cat(
                     (
+                        # talker_hidden 形状是[batch_size, seq_len, hidden_size]
+                        #   这里获取的形状是 [batch_size, 1, hidden_size]
                         talker_hidden[:, pos : pos + 1, :].to(dtype=predictor_dtype),
+                        # [batch_size, 1, hidden_size]
                         layer0_embed,
                     ),
                     dim=1,
@@ -1921,11 +1948,13 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
             )
             # note(ratish): dense rows, the gemv and cutedsl lm_head GEMMs view
             # their input as 2D and read it with a fixed row stride.
+            # 【重要】这里执行了一次 mtp 模型的推理，但是还没有 lm_head 和 sample
             last_hidden = self.predictor_forward_tokens(
                 token_embeds=pair_embeds,
                 batch_size=batch_size,
                 cache_len=0,
             )[:, 1:, :].contiguous()
+
             cache_len = pair_embeds.shape[1]
 
             sub_positions = (
@@ -1933,15 +1962,30 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
                 if self.sub_has_sampled_rows
                 else None
             )
+            # NOTE 【重要】，开始推理
             for layer_idx in range(num_groups - 1):
+                # NOTE
+                #   last_hidden 会在每一轮迭代的时候被更新
+
+                # tip 获取 logits 分数
+                #
+                # 获取 hidden_state 对应的 logits
+                #    lm_head[layer_idx] 说明 MTP 模型预测每一层 codebook 都用不同的 lm_head 权重
                 logits, _ = self.code_predictor.lm_head[layer_idx](last_hidden)
+
+                # tip sample
+                # 采样
                 next_code = self.sample_subtalker_token(
                     logits[:, -1, :],
                     sub_positions=(
                         None if sub_positions is None else sub_positions[layer_idx]
                     ),
                 )
+
+                # NOTE 这里边的数据回用来构建本次推理的音频帧
                 pos_codes[:, layer_idx + 1].copy_(next_code)
+
+                # tip 码本 -> 向量：每一层码本对应的向量还不一样
                 codec_embedding = self.code_predictor.model.codec_embedding[layer_idx]
                 has_next_step = layer_idx < num_groups - 2
                 should_gather_projection = (
@@ -1971,7 +2015,12 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
                     new_embed = codec_embedding(next_code.unsqueeze(1)).to(
                         dtype=predictor_dtype
                     )
+                    # tip 16个 codebook 对应的 embedding 组元素相加，
+                    #    1）pos_sumed 是作为主干模型下一次预测的输入；
+                    #    2）解码器获取音频用的仍然是 pos_codes 中的 16 个 code
                     pos_summed.add_(new_embed[:, 0, :])
+                
+                # NOTE 是否还要预测下一个 codebook
                 if has_next_step:
                     if projected_tables is None:
                         new_predictor_embed = self.code_predictor.project_input(
@@ -1981,8 +2030,10 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
                         new_predictor_embed = projected_buffer.unsqueeze(1)
                     else:
                         new_predictor_embed = torch.nn.functional.embedding(
-                            next_code.unsqueeze(1), projected_tables[layer_idx]
+                            next_code.unsqueeze(1),
+                             projected_tables[layer_idx]
                         )
+                    # NOTE 1）获取qkv并进行注意力计算；2）进行mlp计算
                     last_hidden = self.predictor_forward_tokens(
                         token_embeds=new_predictor_embed,
                         batch_size=batch_size,
@@ -2155,8 +2206,12 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         batch_size: int,
         cache_len: int,
     ) -> torch.Tensor:
-        """Run the predictor stack on token_embeds [batch, tokens, hidden] at slots
-        cache_len onward: one token at any slot, or the pair at slots 0 and 1."""
+        """
+           Run the predictor stack on token_embeds [batch, tokens, hidden] at slots
+            cache_len onward: one token at any slot, or the pair at slots 0 and 1.
+
+
+        """
         num_tokens, hidden_size = token_embeds.shape[1:]
         if num_tokens == 1:
             positions = self.predictor_position_rows[cache_len, :batch_size]
@@ -2184,14 +2239,21 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         # backend's kernel expects and which writes both operands in place.
         residual = token_embeds.reshape(num_rows, 1, hidden_size)
         mlp_out: torch.Tensor | None = None
+
+        # NOTE 【重要】transformer layer 操作
         for layer_idx, layer in enumerate(self.code_predictor.model.layers):
             if mlp_out is None:
+                # 第 0 层，对输入进行 RMSNorm 归一化
                 normed = layer.input_layernorm(residual.reshape(-1, hidden_size))
             else:
+                # 第一层及以后，将上一层mlp输出的结果进行 RMSNorm 归一化
                 normed, residual = layer.input_layernorm(
-                    mlp_out, residual.reshape(-1, hidden_size)
+                    mlp_out, # 上一层的输出
+                    residual.reshape(-1, hidden_size)
                 )
                 residual = residual.reshape(num_rows, 1, hidden_size)
+
+            # 获取 qkv，进行注意力计算
             attn_input = self.predictor_cached_self_attention(
                 layer_idx=layer_idx,
                 attn=layer.self_attn,
@@ -2200,16 +2262,26 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
                 cache_slots=cache_slots,
                 cache_len=cache_len,
             )
+
+            # 残差连接：y = x + F(x) -> result = residual + attn(residual)
             residual = self.predictor_o_proj_add_residual(
                 layer.self_attn.o_proj,
                 attn_input,
                 residual,
             )
+
+            # 对残差连接结果进行归一化和转换成 二维
             normed = layer.post_attention_layernorm(residual.reshape(-1, hidden_size))
+
+            # NOTE mlp 操作，Qwen3OmniMoeTalkerDenseMLP
             mlp_out = layer.mlp(normed)
+
+        # NOTE 对 transformer layer 结果进行归一化
         normed, _ = self.code_predictor.model.norm(
-            mlp_out, residual.reshape(-1, hidden_size)
+            mlp_out, 
+            residual.reshape(-1, hidden_size)
         )
+
         return normed.reshape(batch_size, num_tokens, hidden_size)
 
     @staticmethod
@@ -2294,12 +2366,19 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         cache_slots: torch.Tensor,
         cache_len: int,
     ) -> torch.Tensor:
+        """
+           获取 qkv、进行注意力计算
+        """
         batch_size, num_tokens, hidden_size = hidden_states.shape
         flat_hidden = hidden_states.reshape(-1, hidden_size)
+
+        # tip 对输入进行投影，获取 qkv 
         qkv, _ = attn.qkv_proj(flat_hidden)
         q_linear, k_linear, v = qkv.split(
             [attn.q_size, attn.kv_size, attn.kv_size], dim=-1
         )
+
+        # tip 拆分qk，并对q\v进行归一化
         q, k = apply_qk_norm(
             q=q_linear,
             k=k_linear,
@@ -2338,6 +2417,8 @@ class Qwen3TTSTalker(Qwen3TTSPromptBuilderMixin, nn.Module):
         )
         cached_k = self.predictor_k_cache[layer_idx, :batch_size, :end].transpose(1, 2)
         cached_v = self.predictor_v_cache[layer_idx, :batch_size, :end].transpose(1, 2)
+
+        # NOTE 注意力计算
         attn_output = predictor_gqa_attention(
             q,
             cached_k,

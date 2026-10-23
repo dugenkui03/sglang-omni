@@ -7568,6 +7568,46 @@ def test_qwen3_tts_steady_decode_reports_cuda_graph_ready(
     assert torch.equal(runner.model.decode_feedback_embedding.weight[0], torch.ones(4))
 
 
+def test_qwen3_tts_norm_logs_preserve_values_before_inplace_update(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from sglang_omni.models.qwen3_tts.sglang_model import Qwen3TTSTalkerDecoderLayer
+
+    class InplaceNorm(torch.nn.Module):
+        def forward(self, hidden_states, residual=None):
+            if residual is None:
+                return hidden_states.div_(2)
+            else:
+                residual.add_(hidden_states)
+                hidden_states.copy_(residual / 2)
+                return hidden_states, residual
+
+    class Attention(torch.nn.Module):
+        def forward(self, *, hidden_states, positions, forward_batch):
+            return hidden_states + 1
+
+    layer = Qwen3TTSTalkerDecoderLayer.__new__(Qwen3TTSTalkerDecoderLayer)
+    torch.nn.Module.__init__(layer)
+    layer.layer_id = 0
+    layer.input_layernorm = InplaceNorm()
+    layer.post_attention_layernorm = InplaceNorm()
+    layer.self_attn = Attention()
+    layer.mlp = torch.nn.Identity()
+    with caplog.at_level(logging.INFO, logger=Qwen3TTSTalkerDecoderLayer.__module__):
+        layer.forward(
+            positions=torch.arange(2), hidden_states=torch.tensor([[2., 4.], [6., 8.]]),
+            forward_batch=SimpleNamespace(), residual=None,
+        )
+    records = [record for record in caplog.records if "归一化(Norm)前后对比" in record.getMessage()]
+    assert len(records) == 2
+    input_norm = json.loads(records[0].getMessage().split("\n", 1)[1])
+    assert input_norm["before"]["hidden_states"]["first5"] == [2., 4., 6., 8.]
+    assert input_norm["after"]["hidden_states"]["first5"] == [1., 2., 3., 4.]
+    post_norm = json.loads(records[1].getMessage().split("\n", 1)[1])
+    assert post_norm["before"]["residual"]["first5"] == [1., 2., 3., 4.]
+    assert post_norm["after"]["residual"]["first5"] == [3., 5., 7., 9.]
+
+
 def test_qwen3_tts_decode_feedback_empty_batch_noops() -> None:
     from sglang_omni.models.qwen3_tts.model_runner import Qwen3TTSModelRunner
 

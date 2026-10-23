@@ -214,7 +214,9 @@ class ResizeMLP(nn.Module):
 
 
 class Qwen3OmniMoeTalkerDenseMLP(nn.Module):
-    """Standard SwiGLU MLP."""
+    """Standard SwiGLU MLP.
+        1） up_proj -> 2）func() -> 3)down_proj
+    """
 
     def __init__(
         self,

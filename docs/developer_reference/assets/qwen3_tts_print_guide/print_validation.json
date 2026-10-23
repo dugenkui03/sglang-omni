@@ -1,0 +1,35 @@
+[
+  {
+    "page": 1,
+    "width_mm": 420.0,
+    "height_mm": 297.0,
+    "text_outside_safe_area": [],
+    "fonts": [
+      "AAAAAA+NotoSansSC-Regular",
+      "AAAAAA+NotoSansSC-Semibold",
+      "Helvetica"
+    ]
+  },
+  {
+    "page": 2,
+    "width_mm": 420.0,
+    "height_mm": 297.0,
+    "text_outside_safe_area": [],
+    "fonts": [
+      "AAAAAA+NotoSansSC-Regular",
+      "AAAAAA+NotoSansSC-Semibold",
+      "Helvetica"
+    ]
+  },
+  {
+    "page": 3,
+    "width_mm": 420.0,
+    "height_mm": 297.0,
+    "text_outside_safe_area": [],
+    "fonts": [
+      "AAAAAA+NotoSansSC-Regular",
+      "AAAAAA+NotoSansSC-Semibold",
+      "Helvetica"
+    ]
+  }
+]

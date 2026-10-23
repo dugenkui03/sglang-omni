@@ -754,6 +754,7 @@ class Qwen3TTSStreamingVocoderScheduler(
         self.suppress_bootstrap_silence = bool(suppress_bootstrap_silence)
         self.suppress_bootstrap_max_streams = int(suppress_bootstrap_max_streams)
         self.incremental_decoder = (
+            # NOTE 音频解码器：码本 -> waveform
             Qwen3TTSIncrementalDecoder(self.decoder)
             if self.enable_stateful_codec_decoder
             else None
@@ -1501,8 +1502,10 @@ class Qwen3TTSStreamingVocoderScheduler(
         else:
             pass
         with torch.inference_mode():
+            # NOTE 将 audio codebook 解码为 waveform
             waveform = incremental_decoder.decode(
-                decoder_input.to(self.device), candidate_state
+                decoder_input.to(self.device), 
+                candidate_state
             )
         if candidate_state.frame_position != end_frame:
             raise RuntimeError(

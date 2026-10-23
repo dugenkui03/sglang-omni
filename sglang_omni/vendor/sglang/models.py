@@ -36,6 +36,21 @@ def apply_qk_norm(
     alt_stream: Optional[torch.cuda.Stream] = None,
     allow_inplace: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """对注意力层的 Query(q) 和 Key(k) 按注意力头(head_dim)做 RMSNorm 归一化(QK-Norm)。
+
+    参数:
+        q: Query 张量，形状 [num_tokens, num_heads * head_dim]
+        k: Key 张量，形状 [num_tokens, num_kv_heads * head_dim]
+        q_norm / k_norm: Q 和 K 各自对应的 RMSNorm 模块（权重形状均为 [head_dim]）
+        head_dim: 单个注意力头的维度大小，归一化在每个 head 内部独立计算
+        alt_stream: 可选的辅助 CUDA Stream，用于让 q_norm 和 k_norm 并行执行
+        allow_inplace: 是否允许原地(in-place)融合算子直接修改 q、k 显存
+
+    返回值:
+        归一化后的 (q, k) 元组，形状与输入保持一致。
+    """
+    # 当要求在乘权重前先把 x 转回低精度（对齐 HuggingFace 精度行为）时，
+    # 禁用底层融合原地算子，走标准 RMSNorm 分支以保证数值一致
     if q_norm.cast_x_before_out_mul:
         allow_inplace = False
     return _orig_apply_qk_norm(
