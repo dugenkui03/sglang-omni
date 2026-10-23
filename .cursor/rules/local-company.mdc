@@ -1,0 +1,6 @@
+---
+description: 本机公司部署与 GPU 资源，细节在未入库的 AGENTS.local.md
+alwaysApply: true
+---
+
+公司部署地址、SSH 和 GPU 资源组写在仓库根目录的 `AGENTS.local.md`，该文件不提交。申请 GPU、连接部署服务器或按本机分工改代码前，先读这个文件并遵守其中的用户组、地址和部署分工。

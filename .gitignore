@@ -18,6 +18,9 @@ env/
 # IDE
 .idea/
 .vscode/
+
+# Local company deployment notes
+/AGENTS.local.md
 *.swp
 *.swo
 
