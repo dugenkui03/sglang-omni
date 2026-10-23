@@ -1,0 +1,15 @@
+config_cls: OmniVoicePipelineConfig
+model_path: k2-fsa/OmniVoice
+stages:
+  preprocessing:
+    factory:
+      max_concurrency: 2
+  tts_engine:
+    factory:
+      dtype: float16
+      max_batch_size: 1
+      max_batch_wait_ms: 10
+  vocoder:
+    factory:
+      max_batch_size: 1
+      max_batch_wait_ms: 10
