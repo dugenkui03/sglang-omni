@@ -249,13 +249,13 @@ class Qwen3OmniMoeTalkerDenseMLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """执行升维、门控激活和降维，仅记录选中层的形状与少量数值。"""
         gate_up, _ = self.gate_up_proj(x)
-        if self.layer_id == 1 and logger.isEnabledFor(logging.INFO):
+        if self.layer_id == 0 and logger.isEnabledFor(logging.INFO):
             logger.info(f"MLP 升维，layer_id={self.layer_id}，输入 shape={tuple(x.shape)}，gate/up 合并 shape={tuple(gate_up.shape)}")
         activated = self.act_fn(gate_up)
-        if self.layer_id == 1 and logger.isEnabledFor(logging.INFO):
+        if self.layer_id == 0 and logger.isEnabledFor(logging.INFO):
             logger.info(f"MLP 门控激活(SwiGLU)前后对比，layer_id={self.layer_id}，最多预览前 5 个值\n{json_for_log({'gate_before': gate_up[..., :gate_up.shape[-1] // 2], 'up_before': gate_up[..., gate_up.shape[-1] // 2:], 'after': activated}, preview_elements=5)}")
         x, _ = self.down_proj(activated)
-        if self.layer_id == 1 and logger.isEnabledFor(logging.INFO):
+        if self.layer_id == 0 and logger.isEnabledFor(logging.INFO):
             logger.info(f"MLP 降维，layer_id={self.layer_id}，输入 shape={tuple(activated.shape)}，输出 shape={tuple(x.shape)}")
         return x
 

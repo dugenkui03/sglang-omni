@@ -7,6 +7,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 import torch
+import logging
 
 from sglang_omni.model_runner.base import ModelRunner
 from sglang_omni.model_runner.model_worker import ModelWorker
@@ -21,6 +22,8 @@ from sglang_omni.scheduling.types import (
     SchedulerRequest,
 )
 from sglang_omni.utils.device import supports_device_streams
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sglang.srt.layers.logits_processor import LogitsProcessorOutput
@@ -255,6 +258,10 @@ class Qwen3TTSModelRunner(ModelRunner):
             self.model.semantic_sampling_seed_tensor[:batch_size]
         )
 
+    def should_log(self, request: SchedulerRequest) -> bool:
+        """供 collect_codes 的日志使用，仅允许请求的 Prefill 和第一次 Decode。"""
+        return request.data.generation_steps in (0, 1)
+
     def collect_codes(
         self,
         result: GenerationBatchResult,
@@ -262,11 +269,29 @@ class Qwen3TTSModelRunner(ModelRunner):
         schedule_batch: ScheduleBatch | None,
         requests: list[SchedulerRequest],
     ) -> None:
+        if self.should_log(result):
+            logger.info("开始预测剩下的15个码本")
+
         self.has_pending_code_step = False
         if result.next_token_ids is None:
             return
         else:
             pass
+
+        # tip result.next_token_ids 只是表示一个音频帧的16个码本中的1个
+        #
+        #  假设单个请求得到编号 357
+        #  当前帧最终需要 16 个编号：
+        #  NOTE 后续就是预测 ? 位置的码本 [357, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?]
+        #
+        #推理概念解释
+        # 已知输入：文本 + 参考音频/历史音频帧
+        #                         ↓
+        # 主干输出：当前帧第 0 个编号 + 隐藏状态 h_t // tip 虽然主干模型仅仅输出了一个码本，但是 h_t 可以理解包含了剩下15个码本的信息
+        #                         ↓
+        # CodePredictor 同时利用这两项，预测其余 15 个编号
+        #                         ↓
+        # 当前帧完整的 16 个编号，再合成下一轮的反馈向量
         layer0_codes = result.next_token_ids
         if layer0_codes.ndim == 1:
             layer0_codes = layer0_codes.unsqueeze(1)
@@ -277,6 +302,8 @@ class Qwen3TTSModelRunner(ModelRunner):
         self.stage_token_ids(result, result.next_token_ids)
 
         hidden = result.logits_output.hidden_states
+        if self.should_log(result):
+            logger.info("推测剩余15个码本日志：result.logits_output.hidden_states.shape %s", hidden.shape)
         if isinstance(hidden, torch.Tensor) and hidden.ndim == 2:
             hidden = hidden.unsqueeze(1)
         else:

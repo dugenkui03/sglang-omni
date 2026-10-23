@@ -434,6 +434,7 @@ class ModelRunner(Generic[RequestDataInput]):
                 is_prefill # 是否是 prefill
             )
             if is_prefill:
+                # NOTE 【重要】qwen3tts/Qwen3TTSModelRunner 实现这个方法、预测剩余15个码本
                 self.post_prefill(
                     batch_result,
                     forward_batch,
@@ -441,6 +442,7 @@ class ModelRunner(Generic[RequestDataInput]):
                     scheduler_output.requests,
                 )
             else:
+                # NOTE 【重要】qwen3tts/Qwen3TTSModelRunner 实现这个方法、预测剩余15个码本
                 self.post_decode(
                     batch_result,
                     forward_batch,
