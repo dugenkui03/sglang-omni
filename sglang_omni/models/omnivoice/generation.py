@@ -95,71 +95,160 @@ def plan_chunks(state: OmniVoiceState, frame_rate: float) -> None:
 def prepare_inputs(
     item: SamplingItem,
     model: OmniVoiceModel,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: PreTrainedTokenizerBase, # tip 文本 tokenizer
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """构造条件输入；音频位置按码本排列，文本在每个码本轴复制。"""
+    """文本 token、参考 audio codes、目标 mask 组成输入
+
+       结果两个元素：
+            [8, stype_len + text_len + ref_audio_len + target_audio_len] 形状的 输入+结果 tensor
+            audio mask，一维的 [stype_len + text_len + ref_audio_len + target_audio_len]，元素是 bool 值、true 用来标记后边 ref_audio_len + target_audio_len 的音频位置
+    """
     state = item.state
     assert state.reference_codes is not None
-    codebooks = model.config.num_audio_codebook
+    # 默认是8
+    num_audio_codebook = model.config.num_audio_codebook
+
+    # note 对 style text 进行 token 化
     style = "<|denoise|>" if state.generation.denoise else ""
     style += f"<|lang_start|>{state.language or 'None'}<|lang_end|>"
+    # FIXME 这里用于支持 voice design，暂不支持
     style += "<|instruct_start|>None<|instruct_end|>"
     style_ids = (
+        # tip token化并重复8次
         tokenizer(style, return_tensors="pt")
-        .input_ids.repeat(codebooks, 1)
+        .input_ids.repeat(num_audio_codebook, 1)
         .to(model.device)
     )
+    # tip
     text = f"<|text_start|>{combine_text(item.text, state.reference_text)}<|text_end|>"
-    text_ids = tokenize_text(text, tokenizer).repeat(codebooks, 1).to(model.device)
+    text_ids = tokenize_text(text, tokenizer).repeat(num_audio_codebook, 1).to(model.device)
     reference_codes = state.reference_codes.to(model.device)
+    # tip 包含已生成和待生成的序列长度，形状是：[8, seq_len]
     total_positions = (
         style_ids.shape[-1]
         + text_ids.shape[-1]
-        + reference_codes.shape[-1]
-        + item.target_frames
+        + reference_codes.shape[-1] # 参考音频帧数
+        + item.target_frames # 按照目标时长计算出的
     )
     if total_positions > model.config.llm_config.max_position_embeddings:
         raise ValueError("OmniVoice prompt is longer than the model's context length")
+    # tip 存放目标结果的 tensor
     target = torch.full(
-        (codebooks, item.target_frames),
+        # shape [8, 目标 seq len]
+        (num_audio_codebook, item.target_frames),
         model.config.audio_mask_id,
         dtype=torch.long,
         device=model.device,
     )
+
+    # 沿序列维度 dim=1 将几个 8, x/y/z_seq_len 的tensor拼接在一起，并保留原来的值
     input_ids = torch.cat((style_ids, text_ids, reference_codes, target), dim=1)
+
+    # Audio Mask [all_seq_len] 形状的一维 tensor，第二行代码将 音频位置 mask 值设置为 true
     audio_mask = torch.zeros(input_ids.shape[-1], dtype=torch.bool, device=model.device)
     audio_mask[style_ids.shape[-1] + text_ids.shape[-1] :] = True
     return input_ids, audio_mask
 
 
 def pack_batch(
+    #tip
+    # inputs：长度为 n 的列表，列表的每个元素对应一个请求的tensor
+    # ├─ inputs[0]：Tensor[8, 20]、Tensor[20]
+    # └─ inputs[1]：Tensor[8, 30]、Tensor[30]
     inputs: list[tuple[torch.Tensor, torch.Tensor]],
     target_frames: list[int],
     mask_id: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """同时组装条件／无条件两组行，并严格屏蔽不同长度的 padding。"""
-    batch_size = len(inputs)
-    width = max(ids.shape[-1] for ids, _ in inputs)
+
+    # tip 遍历所有的请求中，输入+输出 tensor 最后一个维度、获取请求中 seq_len 的最大值
+    max_seq_len = max(ids.shape[-1] for ids, _ in inputs)
     device = inputs[0][0].device
+    batch_size = len(inputs)
     input_ids = torch.full(
-        (2 * batch_size, inputs[0][0].shape[0], width),
-        mask_id,
+        (
+            2 * batch_size,
+            # inputs[0][0] 获取的是第一个请求的、input_ids，其 .shape[0] 是 8/表示每一帧的 codebook 数量
+            inputs[0][0].shape[0],
+            # 所有请求中的最大 seq_len
+            max_seq_len
+        ),
+        mask_id, # 1024，音频码本一共 1024个值（8 个码本表示一个音频帧，所以每个音频帧是有 1024^8 个值的组合)
         dtype=torch.long,
         device=device,
     )
-    audio_mask = torch.zeros((2 * batch_size, width), dtype=torch.bool, device=device)
+    # 标识是否是音频的 mask
+    audio_mask = torch.zeros((2 * batch_size, max_seq_len), dtype=torch.bool, device=device)
+    # NOTE 最后两个维度组成了[max_seq_len, max_seq_len]的矩阵
+    #   其中 (x,y)位置的bool值标识计算 x 位置的 hidden_state 时是否可以关注 y 位置的 token 对应的 kv 信息/注意力计算阶段 (y是文本token 或者 某个位置的8层 audio code 的信息)
+    #   默认值是false
     attention_mask = torch.zeros(
-        (2 * batch_size, 1, width, width), dtype=torch.bool, device=device
+        (2 * batch_size, 1, max_seq_len, max_seq_len),
+        dtype=torch.bool,
+        device=device
     )
     for index, ((ids, mask), frames) in enumerate(zip(inputs, target_frames)):
+        # NOTE
+        #   inputs是list、逻辑形状是[batch_size, 2,(8,all_seq_len)或者(all_seq_len)]，注意，每个请求的 all_seq_len 不相同
+        #       all_seq_len 是 style_len + text_len + ref_audio_len + output_audio_len
+        #       target_frames 对应 output_audio_len
+        #
+        # NOTE
+        #  index 标识是第几个请求
+        #  ((ids, mask), frames) 解释：zip将两个数组 inputs 和 target_frames 按位置配队，之前两者每个元素是 tuple[torch.Tensor, torch.Tensor] 和 int，
+        #                           这里直接打包成嵌套的 tuple[tuple[torch.Tensor, torch.Tensor], int]
+        #                           ((ids, mask), frames) 直接将右侧打包的结构 unpacking 成 ((ids, mask), frames)
+        #                               ids: input tensor，形状是 [8, all_seq_len]
+        #                               mask 是 [all_seq_len] 的一维tensor
+        #                               frames 对应 target_seq_len
+
+        # tip all_seq_len
         length = ids.shape[-1]
+        # tip 给 input_ids 这个变量赋值
         input_ids[index, :, :length] = ids
+        # tip 给 audio_mask 变量赋值
         audio_mask[index, :length] = mask
+        # NOTE
+        #   batch中的一个请求占用的空间是 [2,1, max_length, max_length]
+        #   分别是 [index, 1, max_length, max_length] 和 [batch_size + index, ....]
+        #       第一个矩阵的有效token空间都是true，在这里设置值
+        #
+        # tip 例子
+        #          列 y →  0  1  2  3  4
+        #   行 x ↓
+        #     0           [1, 1, 1, 1, 1]
+        #     1           [1, 1, 1, 1, 1]
+        #     2           [1, 1, 1, 1, 1]
+        #     3           [1, 1, 1, 1, 1]
+        #     4           [1, 1, 1, 1, 1]
         attention_mask[index, :, :length, :length] = True
         input_ids[batch_size + index, :, :frames] = ids[:, -frames:]
         audio_mask[batch_size + index, :frames] = True
+        # NOTE
+        #   注意，这里处理的是 index 的第二个 [1, max_length, max_length] 的值
+        #   这里前frame个位置的元素设置成了 true-注意，这里是真实的target长度
         attention_mask[batch_size + index, :, :frames, :frames] = True
-        padding = torch.arange(frames, width, device=device)
+
+
+        # NOTE
+        #   torch.arange(a,b) 是一个从 a 开始，到 b-1 结束的一维 tensor
+        #       padding ，注意、开始是 frames、结束是 max_length，这里是 target 区域之外的 padding、补齐位置
+        #        frames 到 max_seq_len-1 的长度：
+        #                       = style_len + text_len + ref_audio_len + (max_seq_len - length)
+        #                       = 条件输入的前缀长度 + 条件分支原本需要的补齐长度
+        #   第一行是给一个对角线赋值，操作和下边代码同理
+        #         for p in padding:
+        #             attention_mask[batch_size + index, :, p, p] = True
+        #
+        # tip 例子：frame = 2, max_length = 5
+        #          列 y →  0  1  2  3  4
+        #   行 x ↓
+        #     0           [1, 1, 0, 0, 0]
+        #     1           [1, 1, 0, 0, 0]
+        #     2           [0, 0, 1, 0, 0]
+        #     3           [0, 0, 0, 1, 0]
+        #     4           [0, 0, 0, 0, 1]
+        padding = torch.arange(frames, max_seq_len, device=device)
         attention_mask[batch_size + index, :, padding, padding] = True
     return input_ids, audio_mask, attention_mask
 
@@ -226,10 +315,15 @@ def predict_tokens(
 def sample_batch(
     items: list[SamplingItem],
     model: OmniVoiceModel,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: PreTrainedTokenizerBase, # tip 文本tokenizer
     is_cancelled: CancellationCheck,
 ) -> list[torch.Tensor | Exception]:
-    """一次微批完成所有去掩码步骤；取消不会把半成品当成功结果。"""
+    """
+       文本 token、参考 audio codes、目标 mask 组成输入
+
+
+
+    """
     if not items:
         return []
     options = items[0].state.generation
@@ -243,7 +337,10 @@ def sample_batch(
         try:
             if is_cancelled(item.request_id):
                 raise CancelledError(item.request_id)
+            # note step 1 整理输入，详情见注释
+            #   prepared[0] 是 输入+输出 tensor，prepared[1]是 audio mask
             prepared = prepare_inputs(item, model, tokenizer)
+            # prompt_tokens 是指输入文本+音频
             item.state.prompt_tokens += prepared[0].shape[-1] - item.target_frames
             inputs.append(prepared)
             valid_indices.append(index)
@@ -253,8 +350,14 @@ def sample_batch(
     items = valid_items
     if not items:
         return [results[index] for index in range(original_count)]
+
+    # inputs：长度为 n 的列表，列表的每个元素对应一个请求的tensor
+    # ├─ inputs[0]：Tensor[8, 20]、Tensor[20]
+    # └─ inputs[1]：Tensor[8, 30]、Tensor[30]
     input_ids, audio_mask, attention_mask = pack_batch(
-        inputs, [item.target_frames for item in items], model.config.audio_mask_id
+        inputs,
+        [item.target_frames for item in items],
+        model.config.audio_mask_id
     )
     batch_size = len(items)
     codebooks = model.config.num_audio_codebook

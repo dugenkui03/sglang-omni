@@ -18,7 +18,9 @@ class OmniVoiceState(DeclarativeStateBase):
     language: str | None = None
     speed: float = 1.0
     seed: int | None = None
+    # stage 1 输出，stage 2 输入
     reference_waveform: torch.Tensor | None = None
+    # stage 2 保存 waveform -> [8, 参考音频帧数] 的 audio code
     reference_codes: torch.Tensor | None = None
     reference_rms: float = 0.0
     generation: GenerationOptions = field(default_factory=GenerationOptions)

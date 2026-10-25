@@ -15,10 +15,10 @@ from sglang_omni.models.omnivoice.audio import AudioCodec, load_codec
 from sglang_omni.models.omnivoice.hf_config import GenerationOptions, VocoderOptions
 from sglang_omni.models.omnivoice.payload_types import OmniVoiceState
 from sglang_omni.models.omnivoice.stages import (
-    batch_scheduler,
     decode_batch,
     encode_batch,
     generate_batch,
+    scheduler,
 )
 from sglang_omni.proto import OmniRequest, StagePayload
 from sglang_omni.scheduling.message import IncomingMessage
@@ -129,23 +129,23 @@ def test_abort_while_compute_finishes_drops_outbox_result() -> None:
         returned.set()
         return payloads
 
-    scheduler = batch_scheduler(compute, torch.device("cpu"), 1, 0)
-    worker = threading.Thread(target=scheduler.start, daemon=True)
+    scheduler_instance = scheduler(compute, torch.device("cpu"), 1, 0)
+    worker = threading.Thread(target=scheduler_instance.start, daemon=True)
     worker.start()
     try:
         payload = make_payload("abort", [2])
-        scheduler.inbox.put(
+        scheduler_instance.inbox.put(
             IncomingMessage(request_id="abort", type="new_request", data=payload)
         )
         assert entered.wait(3)
-        scheduler.abort("abort")
+        scheduler_instance.abort("abort")
         release.set()
         assert returned.wait(3)
         with pytest.raises(queue.Empty):
-            scheduler.outbox.get(timeout=0.2)
+            scheduler_instance.outbox.get(timeout=0.2)
     finally:
         release.set()
-        scheduler.stop()
+        scheduler_instance.stop()
         worker.join(timeout=3)
         assert not worker.is_alive()
 

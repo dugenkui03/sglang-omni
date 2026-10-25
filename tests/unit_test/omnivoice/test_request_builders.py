@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """测试真实请求转换及不额外筛掉短参考音频的约束。"""
 
+import base64
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -46,6 +48,39 @@ def test_reference_formats_and_short_audio(reference: str, structured: bool) -> 
     assert state.generation.num_step == 32
     assert state.reference_text == "你好"
     assert state.generation.guidance_scale == 2.0
+
+
+@pytest.mark.parametrize("encoded_field", ["audio_path", "data"])
+def test_logs_preserve_fields_without_audio_content(
+    reference: str, encoded_field: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """两种 Base64 参考格式都不能泄漏音频内容，状态字段仍完整可见。"""
+    encoded = base64.b64encode(Path(reference).read_bytes()).decode()
+    request = payload(reference, structured=True)
+    request.request.inputs["references"] = [
+        {
+            encoded_field: (
+                f"data:audio/wav;base64,{encoded}"
+                if encoded_field == "audio_path"
+                else encoded
+            ),
+            "text": "你好",
+        }
+    ]
+    request.request.params["seed"] = 7
+    with caplog.at_level(
+        logging.INFO, logger="sglang_omni.models.omnivoice.request_builders"
+    ):
+        state = build_omnivoice_state(request, 24000)
+    assert state.reference_waveform.shape == (1, 240)
+    assert encoded not in caplog.text
+    assert encoded[:80] not in caplog.text
+    assert '"text": "Hello"' in caplog.text
+    assert '"reference_text": "你好"' in caplog.text
+    assert '"seed": 7' in caplog.text
+    assert '"num_step": 32' in caplog.text
+    assert '"reference_waveform": {' in caplog.text
+    assert '"generated_codes": []' in caplog.text
 
 
 def test_overrides_and_tensor_state_roundtrip(reference: str) -> None:

@@ -17,13 +17,18 @@ from sglang_omni.models.omnivoice.payload_types import OmniVoiceState
 
 
 class AudioCodec:
-    """参考编码与输出解码共享权重，并串行访问 Codec 的内部状态。"""
+    """负责将 waveform 转换成 audio codes
+       audio codes 是从0开始的编码，每个编码对应一个向量
+       一个时间帧对应的8个codes对应的向量加合之后就是这个token对应的主干模型的向量化输入
+    """
 
     def __init__(self, checkpoint: str, device: str) -> None:
         """只加载完整检查点自带的 Codec，不隐式下载另一版本。"""
         codec_path = Path(checkpoint) / "audio_tokenizer"
         if not (codec_path / "config.json").is_file():
             raise FileNotFoundError(f"OmniVoice checkpoint requires {codec_path}")
+
+        # NOTE 模型详情 https://huggingface.co/k2-fsa/OmniVoice/tree/main/audio_tokenizer
         self.model = (
             HiggsAudioV2TokenizerModel.from_pretrained(
                 str(codec_path), dtype=torch.float32
@@ -42,7 +47,9 @@ class AudioCodec:
         if remainder:
             waveform = waveform[..., :-remainder]
         with self.lock:
+            # NOTE waveform -> audio codes
             return self.model.encode(
+                # unsqueeze 在指定位置增加一个大小为 1 的维度，数据内容不变
                 waveform.unsqueeze(0).to(self.model.device)
             ).audio_codes[0]
 
@@ -50,6 +57,7 @@ class AudioCodec:
     def decode(self, codes: torch.Tensor) -> torch.Tensor:
         """解码等长度码本批次，保持 [B,1,采样点] 结构。"""
         with self.lock:
+            # NOTE audio codes -> waveform
             return self.model.decode(codes.to(self.model.device)).audio_values
 
 
