@@ -1,22 +1,98 @@
 # OmniVoice 待办事项
 
-依据：[技术方案](DESIGN.md)；使用及评测入口见 [Cookbook](../../../docs/cookbook/omnivoice.md)。以下是待完成项，不代表已支持或已验收。
 
-## 1. 支持张量并行(TP)
+## 1. 推理优化：逐项讨论、逐项接入
 
-- [ ] 设计主干模型的权重切分、跨 GPU 通信和检查点加载方式，明确 Codec 的设备放置。
-- [ ] 实现多 GPU 推理，确保 CFG、迭代去掩码和请求随机状态在各 rank 间一致。
-- [ ] 实现后再解除 `config.py` 中 `tp_size=1` 的限制，并补充配置和使用说明。
-- [ ] 验证 TP=1 与多卡结果、异常／取消行为，以及每卡 GPU 显存、吞吐和时延。
 
-## 2. 支持流式输出(Stream)
+### 1.1 核心代码文件：加速实现在哪里
 
-- [ ] 明确扩散式生成的可输出边界，设计分段生成、解码和增量响应策略。
-- [ ] 打通 `stream=true` 的 Stage 输出与现有 HTTP 流式协议，处理顺序、结束信号和取消。
-- [ ] 处理段间拼接、淡入淡出和音量一致性；支持后更新能力声明及请求校验。
-- [ ] 验证完整音频一致性、首音频时延、分块间隔、客户端断连和长文本播放连续性。
+| 标记 | 仓库及核心代码文件 | 关键函数／类与职责 |
+|---|---|---|
+| O1 | OmniVoice：[omnivoice_flashinfer.py][O1] | `apply_flashinfer()` 总入口；`_generate_iterative_packed()` 打包和批量采样；`_forward_logits()` 仅目标位置输出头；`_patch_attention_forward()`、`_patch_mlp()`、`_patch_rmsnorm()` 局部替换；`_get_or_capture_graph()`、`_get_or_capture_bucket_graph()` 图捕获。 |
+| O2 | OmniVoice：[cli/infer_batch.py][O2] | `cluster_samples_by_batch_size()`、`cluster_samples_by_duration()` 按长度／时长组批；`process_init()` 加载后按开关启用 FlashInfer。 |
+| O3 | OmniVoice：[models/omnivoice.py][O3] | `create_voice_clone_prompt()`、`VoiceClonePrompt` 复用参考音频编码；`_generate_iterative()`、`_predict_tokens_with_scoring()` 是普通路径和采样对照。 |
+| V1 | vLLM-Omni：[omnivoice_generator.py][V1] | `OmniVoiceAttention`、`OmniVoiceMLP` 合并投影；`triton_rms_norm()`、`triton_fused_add_rms_norm()`、`triton_swiglu()` 融合算子；`_OmniVoiceCUDAGraphForward` 分桶捕获／重放；`forward()` 固定文本向量复用、目标 logits 转 FP32；`_unmask_one_request()` 单次 log-softmax CFG。 |
+| V2 | vLLM-Omni：[fused_qkv_rope.py][V2] | `fused_qkv_norm_rope()`、`_qkv_norm_rope_kernel()` 将 Q/K 归一化、RoPE、K/V 广播和布局转换融合为一次 Triton 内核调用。 |
+| V3 | vLLM-Omni：[pipeline_omnivoice.py][V3] | `OmniVoicePipeline.denoise_step()` 对当前活跃请求打包执行单轮生成；`step_scheduler()` 推进请求状态；参考音频编码复用由 `_speaker_cache` 接入。 |
 
-## 3. 技术方案中尚未完成的验证与交付
+[O1]: https://github.com/k2-fsa/OmniVoice/blob/28bc0889d92110491d726a9c79f26a895db5a074/omnivoice/models/omnivoice_flashinfer.py
+[O2]: https://github.com/k2-fsa/OmniVoice/blob/28bc0889d92110491d726a9c79f26a895db5a074/omnivoice/cli/infer_batch.py
+[O3]: https://github.com/k2-fsa/OmniVoice/blob/28bc0889d92110491d726a9c79f26a895db5a074/omnivoice/models/omnivoice.py
+[V1]: https://github.com/vllm-project/vllm-omni/blob/f7d012bf3c2f63468a76b86acef5e5033872f7f5/vllm_omni/model_executor/models/omnivoice/omnivoice_generator.py
+[V2]: https://github.com/vllm-project/vllm-omni/blob/f7d012bf3c2f63468a76b86acef5e5033872f7f5/vllm_omni/model_executor/models/omnivoice/fused_qkv_rope.py
+[V3]: https://github.com/vllm-project/vllm-omni/blob/f7d012bf3c2f63468a76b86acef5e5033872f7f5/vllm_omni/diffusion/models/omnivoice/pipeline_omnivoice.py
+
+### 1.2 有源码实现依据的优化清单
+
+#### 01. 仅目标位置输出头（Target-only Projection）
+
+- [ ] 参考 O1 `_forward_logits()`，先提取两个 CFG 分支的目标隐藏状态，再计算 `audio_heads` 和转为 FP32，减少无用投影及 logits 占用的 GPU 显存。V1 `forward()` 只实现了提取目标 logits 后再转 FP32，`_get_logits()` 仍投影全部位置；两者不能混称。
+
+#### 02. 合并 QKV 投影（Fused QKV Projection）
+
+- [ ] 参考 O1 `_patch_attention_forward()`、V1 `OmniVoiceAttention`，拼接 Q/K/V 权重，一次线性计算后按各自头数拆分；优先保留 `Qwen3Model` 主体，局部适配，不默认重写整套主干。
+
+#### 03. 合并 MLP 投影及激活（Fused Gate/Up、SwiGLU）
+
+- [ ] 参考 O1 `_patch_mlp()`、V1 `OmniVoiceMLP` 和 `triton_swiglu()`，合并 gate/up 投影，融合 SiLU 与逐元素乘法，避免拆分后的额外复制。
+
+#### 04. 归一化融合（Fused RMSNorm）
+
+- [ ] 参考 O1 `_fi_rmsnorm_forward()`、V1 `triton_rms_norm()`；进一步评估 V1 的残差加法与 RMSNorm 融合，减少中间读写和内核启动。
+
+#### 05. 注意力前处理融合（QK Norm / RoPE / Layout Fusion）
+
+- [ ] O1 `_fi_attention_module_forward()` 保持 NHD 布局、分别执行 Q/K 归一化和 FlashInfer RoPE；V2 `fused_qkv_norm_rope()` 则把 Q/K 归一化、RoPE、K/V 广播和输出布局合到一个 Triton 内核。根据设备和依赖选择路径，不把两者描述成相同的融合程度。
+
+#### 06. 批量采样（Vectorized Sampling）
+
+- [ ] 参考 O1 `_generate_iterative_packed()`，批量执行 CFG、log-softmax、argmax、Gumbel；其 top-k 位置选择和写回仍按请求循环。适配时保留本项目每请求独立随机数生成器、不同去掩码数量和结果对应关系；V1 的采样仍逐请求执行。
+
+#### 07. 紧凑序列打包（Sequence Packing）
+
+- [ ] 参考 O1 `_generate_iterative_packed()`、V3 `denoise_step()`，按实际长度排列条件／无条件序列，使用累计边界隔离请求和分支，减少 Padding；核对位置编号、目标偏移、结果还原和取消行为。
+
+#### 08. 变长注意力后端（Variable-length Attention）
+
+- [ ] 参考 O1 `PackedAttnRunner.plan()` 的 ragged attention 和 V1 `OmniVoiceAttention` 的变长后端；与 07 配合，减少 Padding 计算和二维掩码分配。必须保持双向注意力与请求隔离；O1 固定槽位的 bucket graph 路径实际使用 SDPA，不能把所有图模式都称为无 Padding 的 FlashInfer 路径。
+
+#### 09. 固定输入准备复用
+
+- [ ] 参考 V1 `_ensure_rope()`、`_rope_table_for()`，以及 `forward()` 普通执行路径循环外的 `text_embeds_cached`、`audio_mask_3d`。只复用不随轮次变化的准备结果；图路径另行处理，不能缓存受目标变化影响的主干隐藏状态或 K/V。
+
+#### 10. CUDA 图（CUDA Graph）
+
+- [ ] 参考 O1 两种图捕获函数和 V1 `_OmniVoiceCUDAGraphForward`，评估按批大小／长度分桶、静态缓冲区和重放；验证额外 Padding、首次捕获开销、GPU 显存、动态长度、随机采样、取消及并发缓冲区隔离。与通用编译开关分别验证。
+
+#### 11. 按长度组批（Length-aware Batching）
+
+- [ ] 参考 O2 的时长排序和组批函数，评估在现有 `SimpleScheduler` 中降低批内长度差异；在线服务需同时衡量排队时延，不能直接照搬离线排序。
+
+#### 12. 按步调度（Step Scheduling）
+
+- [ ] V3 `denoise_step()` 对活跃请求组批执行一轮，`step_scheduler()` 推进轮次；接入本项目需另行设计调度器。主要面向并发吞吐和请求等待，不能等同于单请求加速；最终仍返回完整音频，不属于本次删除的流式输出。
+
+#### 13. CFG 化简（Single Log-softmax CFG）
+
+- [ ] 参考 V1 `_unmask_one_request()` 与 `forward()`，把多次 log-softmax 化简为 `log_softmax((1+s)*conditional - s*unconditional)`。数学等价，浮点结果按容差验收；保留屏蔽 mask、类别温度及本项目已有的候选截断规则。
+
+
+### 1.3 暂不列为实施项
+
+- **区域编译（Regional Compilation）**：V1 有 `_repeated_blocks` 支持声明；仅据此不能认定已有可直接搬用、默认启用且验证过收益的编译路径，先从实施清单移出。
+- **TF32**：V1 `_maybe_enable_tf32()` 是可选的进程级设置，面向支持该格式的 GPU 上的 FP32 计算；本项目主干默认 FP16，不把它作为通用加速项。
+- **参考编码复用**：O3 `VoiceClonePrompt` 与 V3 `_speaker_cache` 有实现，但跨请求缓存会改变当前不缓存参考结果的约定。保留参考资料，另行确认范围后再安排。
+- **减少迭代步数**：O3 已提供 `num_step`，属于生成参数和质量／速度权衡，不作为本次保持采样设置的实现优化。
+
+### 1.4 接入与验收约定
+
+先建立 GPU 基线，再按第 2 节验证数值、质量、时延、吞吐及峰值 GPU 显存。逐项确认、逐项接入，优先小范围修改；07／08 属于相互配合的布局与后端修改，需一起设计。记录依赖、设备、开关、改动文件和实测结果后再勾选，不把上游性能数字当作本项目收益。
+
+只借鉴加速实现，不照搬生成行为：V1 温度采样直接对完整分布加入 Gumbel，本项目保留官方类别采样的 top-10% 候选截断；批量采样也要保留请求级随机状态。当前长文本每段独立完成生成、最后合并响应的行为不变；不新增跨轮 K/V 复用或静默降级路径。
+
+无参考 TTS、VoiceDesign 当前属于首版范围之外，尚未列为本次承诺的实现任务。
+
+## 2. 技术方案中尚未完成的验证与交付
 
 - [ ] 服务器部署：本机提交推送，服务器在独立目录、环境和端口拉取验证；不影响其他服务。
 - [ ] GPU 官方对齐：在相同检查点与生成配置下，比较文本 token、参考码本、目标长度、单步 logits、生成码本和波形，记录精度及容差。
@@ -30,12 +106,6 @@
 - [ ] CI 校准：按现有 `apply_wer_slack` 规则确定质量阈值，再更新 `tests/test_model/tts_ci_config.py` 的非流式预设；不预填未经实测的阈值。
 - [ ] 验收归档：保存环境版本、模型 revision／权重哈希、评测配置、音频和统计结果，更新技术方案及 Cookbook 的交付状态。
 
-## 4. 原方案延期优化
-
-- [ ] CUDA Graph：正确性和 GPU 基线完成后评估捕获／重放策略，验证动态长度、微批、随机采样及取消；有实测收益后再启用能力声明。
-
-无参考 TTS、VoiceDesign 当前属于首版范围之外，尚未列为本次承诺的实现任务。
-
-## 5. 已完成基线
+## 3. 已完成基线
 
 四阶段原生接入、音色克隆、完整音频响应、微批及长文本分段已有实现；71 项单测／回归、4 项 CPU FP32 真实权重对齐和本机 HTTP／并发验证已通过。上述结果不能代替 GPU 验证、全量质量评测或服务器部署。

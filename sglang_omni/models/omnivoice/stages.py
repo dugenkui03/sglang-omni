@@ -296,7 +296,7 @@ def generate_batch(
             if not items:
                 continue
             try:
-                # NOTE
+                # NOTE 推理核心代码？
                 codes = sample_batch(items, model, tokenizer, is_cancelled)
                 for index, generated in zip(active, codes, strict=True):
                     if isinstance(generated, Exception):
@@ -353,6 +353,7 @@ def create_tts_engine_executor(
         raise ValueError(f"Unsupported OmniVoice dtype: {dtype}")
     resolved = resolve_concrete_device(device, gpu_id)
     checkpoint = resolve_checkpoint(model_path)
+    # NOTE 初始化 stage，初始化 stage 的时候加载模型
     model = (
         OmniVoiceModel.from_pretrained(
             checkpoint, dtype=dtypes[dtype], attn_implementation="sdpa"
@@ -364,8 +365,11 @@ def create_tts_engine_executor(
     # tip: text - tokenizer -> text token_id
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
     return scheduler(
-        # note compute_fn = generate_batch
-        partial(generate_batch, model=model, tokenizer=tokenizer),
+        partial(
+            generate_batch, # note compute_fn = generate_batch
+            model=model,  # tip 已经初始化的模型
+            tokenizer=tokenizer # tip 已经初始化的 text tokenizer
+        ),
         resolved,
         max_batch_size,
         max_batch_wait_ms,
