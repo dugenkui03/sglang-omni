@@ -119,10 +119,116 @@ def test_model_attention_is_bidirectional(model) -> None:
     ids = torch.tensor([[[13, 14], [13, 14]]])
     audio = torch.zeros(1, 2, dtype=torch.bool)
     mask = torch.ones(1, 1, 2, 2, dtype=torch.bool)
-    first = model(ids, audio, mask)
+    target_position_indices = torch.tensor([0])
+    first = model(ids, audio, mask, target_position_indices=target_position_indices)
     ids[:, :, 1] = 15
-    second = model(ids, audio, mask)
-    assert not torch.allclose(first[:, :, 0], second[:, :, 0], atol=1e-7)
+    second = model(ids, audio, mask, target_position_indices=target_position_indices)
+    assert not torch.allclose(first[:, 0], second[:, 0], atol=1e-7)
+
+
+@pytest.mark.parametrize("target_frame_counts", [(2,), (2, 5)])
+@pytest.mark.parametrize("sampled", [False, True])
+def test_target_projection_matches_full_projection(
+    model, tokenizer, monkeypatch, target_frame_counts: tuple[int, ...], sampled: bool
+) -> None:
+    """先取行必须保持每轮 logits 和最终码本，同时减少真实输出头的输入行数。"""
+    options = {
+        "position_temperature": 0.7 if sampled else 0.0,
+        "class_temperature": 0.4 if sampled else 0.0,
+    }
+    items = [
+        make_item(str(index), frames, **options)
+        for index, frames in enumerate(target_frame_counts)
+    ]
+    input_lengths = [
+        prepare_inputs(item, model, tokenizer)[0].shape[-1] for item in items
+    ]
+    backbone_outputs: list[torch.Tensor] = []
+    projection_rows: list[int] = []
+
+    def capture_hidden_states(module, arguments, output) -> None:
+        """保留当前轮的真实主干输出，供完整投影基准使用。"""
+        backbone_outputs[:] = [output.last_hidden_state]
+
+    def capture_projection_rows(module, arguments) -> None:
+        """观测真实线性层输入，防止实现退化为全量投影后裁剪。"""
+        projection_rows.append(
+            arguments[0].numel() // model.config.llm_config.hidden_size
+        )
+
+    def compare_target_logits(module, arguments, output) -> None:
+        """独立计算完整投影，并按各请求的原始位置切片作为对照。"""
+        hidden_states = backbone_outputs[0]
+        full_logits = torch.nn.functional.linear(
+            hidden_states, model.audio_heads.weight
+        )
+        full_logits = full_logits.view(
+            hidden_states.shape[0],
+            hidden_states.shape[1],
+            model.config.num_audio_codebook,
+            model.config.audio_vocab_size,
+        ).permute(0, 2, 1, 3)
+        conditional = [
+            full_logits[index, :, length - frames : length]
+            for index, (length, frames) in enumerate(
+                zip(input_lengths, target_frame_counts, strict=True)
+            )
+        ]
+        unconditional = [
+            full_logits[len(items) + index, :, :frames]
+            for index, frames in enumerate(target_frame_counts)
+        ]
+        torch.testing.assert_close(
+            output,
+            torch.cat(conditional + unconditional, dim=1),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+
+    hooks = [
+        model.llm.register_forward_hook(capture_hidden_states),
+        model.audio_heads.register_forward_pre_hook(capture_projection_rows),
+        model.register_forward_hook(compare_target_logits),
+    ]
+    try:
+        actual = sample_batch(items, model, tokenizer, lambda _: False)
+    finally:
+        for hook in hooks:
+            hook.remove()
+    assert projection_rows == (
+        [2 * sum(target_frame_counts)] * items[0].state.generation.num_step
+    )
+
+    target_forward = model.forward
+
+    def full_projection_reference(
+        input_ids: torch.Tensor,
+        audio_mask: torch.Tensor,
+        attention_mask: torch.Tensor,
+        *,
+        target_position_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """仅在测试中选中全部行，投影后裁剪，复现修改前的计算范围。"""
+        all_positions = torch.arange(
+            input_ids.shape[0] * input_ids.shape[-1], device=input_ids.device
+        )
+        full_logits = target_forward(
+            input_ids, audio_mask, attention_mask, target_position_indices=all_positions
+        )
+        return full_logits.index_select(1, target_position_indices)
+
+    monkeypatch.setattr(model, "forward", full_projection_reference)
+    expected = sample_batch(
+        [
+            make_item(str(index), frames, **options)
+            for index, frames in enumerate(target_frame_counts)
+        ],
+        model,
+        tokenizer,
+        lambda _: False,
+    )
+    for actual_codes, expected_codes in zip(actual, expected, strict=True):
+        torch.testing.assert_close(actual_codes, expected_codes, rtol=0, atol=0)
 
 
 def test_cancellation_returns_error_not_partial_audio(model, tokenizer) -> None:

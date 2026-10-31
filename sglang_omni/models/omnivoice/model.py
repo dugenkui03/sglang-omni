@@ -56,12 +56,16 @@ class OmniVoiceModel(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: torch.Tensor, # [batch_size * 2, 8, max_len]
-        audio_mask: torch.Tensor, # [batch_size * 2, max_len]
-        attention_mask: torch.Tensor, # [batch_size * 2, 1, max_len, max_len] TODO 1 对应助理李头的维度 // 不懂
+        input_ids: torch.Tensor,  # [batch_size * 2, num_audio_codebook, max_seq_len]
+        audio_mask: torch.Tensor,  # [batch_size * 2, max_seq_len]
+        attention_mask: torch.Tensor,  # [batch_size * 2, 1, max_seq_len, max_seq_len]
+        *,
+        target_position_indices: torch.Tensor,
     ) -> torch.Tensor:
-        """
-            note 一次推理
+        """完整序列经过主干后，仅投影目标音频位置。
+
+        索引指向展平后的 batch_size * 2 * max_seq_len 个位置；
+        返回 [num_audio_codebook, total_target_frames * 2, audio_vocab_size]。
         """
 
         # NOTE 文本向量化
@@ -96,22 +100,22 @@ class OmniVoiceModel(PreTrainedModel):
             return_dict=True,
         ).last_hidden_state # NOTE 【重要】对于 transformer layer/ transformer 主干，输入形状和输出形状不变
 
-        # NOTE audio_heads 的 output_dim 是 vocab_size * 8 ，所以是一下子把8个 audio codes 的结果输出出来了
-        #       vocab_size 个元素中选择出一个 audio code，共选择出8个
-        #
-        # logits 形状是 [batch_size * 2, max_len, vocab_size * 8]
-        logits = self.audio_heads(hidden_states)
+        # 先取目标位置的完整向量，省去上下文与 Padding 的输出头计算。
+        # [batch_size * 2, max_seq_len, hidden_size] → [total_target_frames * 2, hidden_size]
+        target_hidden_states = hidden_states.flatten(0, 1).index_select(
+            0, target_position_indices
+        )
+        logits = self.audio_heads(target_hidden_states)
 
-        # tip 最后一个维度拆开：[batch_size * 2, max_len, vocab_size * 8] -> [batch_size * 2, 8, max_len, vocab_size]
+        # 每个目标位置仍计算全部码本；序列顺序为全部条件目标、全部无条件目标。
         return logits.view(
-            # input_ids 形状是 [batch_size * 2, 8, max_len]
-            input_ids.shape[0], # batch_size * 2
-            input_ids.shape[-1], # max_len
-            self.config.num_audio_codebook, # 8
-            self.config.audio_vocab_size, # audio_vocab_size
-        ).permute(0, 2, 1, 3) # permute 重新排列、交换了 1、2：等价于 1、2 维度的矩阵进行了转置，参考如下注释
+            target_hidden_states.shape[0],
+            self.config.num_audio_codebook,
+            self.config.audio_vocab_size,
+        ).permute(1, 0, 2)
 
     """
+# 以下保留通用的四维 permute 教学示例；本方法现在返回三维目标 logits。
 # 形状 [1, 2, 3, 2]
 x = torch.tensor([
     [  # 请求 0
