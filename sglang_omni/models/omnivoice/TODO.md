@@ -26,7 +26,11 @@
 
 #### 01. 仅目标位置输出头（Target-only Projection）
 
-- [ ] 参考 O1 `_forward_logits()`，先提取两个 CFG 分支的目标隐藏状态，再计算 `audio_heads` 和转为 FP32，减少无用投影及 logits 占用的 GPU 显存。V1 `forward()` 只实现了提取目标 logits 后再转 FP32，`_get_logits()` 仍投影全部位置；两者不能混称。
+- [x] 参考 O1 `_forward_logits()`，先提取两个 CFG 分支的目标隐藏状态，再计算 `audio_heads` 和转为 FP32，减少无用投影及 logits 占用的 GPU 显存。V1 `forward()` 只实现了提取目标 logits 后再转 FP32，`_get_logits()` 仍投影全部位置；两者不能混称。
+
+实现：`generation.py` 每段构造一次目标索引，`model.py` 在输出头前取行；返回 `[num_audio_codebook, total_target_frames * 2, audio_vocab_size]`，条件目标在前、无条件目标在后。主干和采样规则不变，不保留完整 logits 返回入口。
+
+2026-10-31 验证：77 项单测／回归通过；官方权重的 4 项 CPU FP32 对齐通过，生成码本一致、波形最大误差均为 0。GPU 时延及峰值 GPU 显存收益尚未实测；缺少 `pre_commit`，全量钩子未运行。
 
 #### 02. 合并 QKV 投影（Fused QKV Projection）
 

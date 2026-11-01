@@ -426,6 +426,33 @@ def sample_batch(
         model.config.audio_mask_id
     )
     batch_size = len(items)
+    max_sequence_length = input_ids.shape[-1]
+    conditional_target_indices: list[torch.Tensor] = []
+    unconditional_target_indices: list[torch.Tensor] = []
+    target_frame_offsets: list[int] = []
+    total_target_frames = 0
+    # 每段生成只构造一次索引，所有轮次复用；已填好的目标位置仍保留。
+    for request_index, ((request_input_ids, _), item) in enumerate(
+        zip(inputs, items, strict=True)
+    ):
+        target_positions = torch.arange(
+            item.target_frames, dtype=torch.long, device=model.device
+        )
+        conditional_target_indices.append(
+            request_index * max_sequence_length
+            + request_input_ids.shape[-1]
+            - item.target_frames
+            + target_positions
+        )
+        unconditional_target_indices.append(
+            (batch_size + request_index) * max_sequence_length + target_positions
+        )
+        target_frame_offsets.append(total_target_frames)
+        total_target_frames += item.target_frames
+    # 对应展平后的 hidden_states，排列为全部条件目标、全部无条件目标。
+    target_position_indices = torch.cat(
+        conditional_target_indices + unconditional_target_indices
+    )
     num_audio_codebook = model.config.num_audio_codebook
     tokens = [
         torch.full(
@@ -450,11 +477,14 @@ def sample_batch(
         if all(cancelled):
             break
 
-        # NOTE 进行第一轮推理，OmniVoiceModel
-        #   输入是 1.1 组装的数据
-        #   结果形状是 [batch_size * 2, 8, max_len, vocab_size]，其中有两个维度是 8 和 vocab_size，这两个维度组成了8层 audio book 的选值基础
-        #       这个形状、对应输入的 [batch_size * 2, 8, max_len] 其实也可以看到、为每个位置输出了一个 vocab_size 大小的选值基础
-        logits = model(input_ids, audio_mask, attention_mask).float()
+        # 每轮主干仍处理完整输入，输出头仅返回目标位置并转为 FP32。
+        # logits: [num_audio_codebook, total_target_frames * 2, audio_vocab_size]
+        logits = model(
+            input_ids,
+            audio_mask,
+            attention_mask,
+            target_position_indices=target_position_indices,
+        ).float()
 
         if not torch.isfinite(logits).all():
             raise RuntimeError("OmniVoice model produced non-finite logits")
@@ -467,11 +497,15 @@ def sample_batch(
                 continue
             # 总的有效长度和结果长度
             length, frames = inputs[index][0].shape[-1], item.target_frames
+            target_frame_offset = target_frame_offsets[index]
+            unconditional_frame_offset = total_target_frames + target_frame_offset
 
             # NOTE TODO
             predicted, scores = predict_tokens(
-                logits[index, :, length - frames : length],
-                logits[batch_size + index, :, :frames],
+                logits[:, target_frame_offset : target_frame_offset + frames],
+                logits[
+                    :, unconditional_frame_offset : unconditional_frame_offset + frames
+                ],
                 options,
                 model.config.audio_mask_id,
                 item.generator,

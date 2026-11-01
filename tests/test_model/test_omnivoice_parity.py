@@ -196,8 +196,20 @@ def test_official_stage_and_waveform_parity(
         actual_codes = OmniVoiceState.from_dict(generated.data).generated_codes
         assert [codes.shape[-1] for codes in expected_codes] == state.target_frames
         assert len(actual_codes) == len(expected_codes)
+        # 官方仍返回全部位置；按条件末尾、无条件开头提取相同目标区域。
+        target_frames = state.target_frames[0]
+        conditional_length = input_ids.shape[-1]
+        expected_target_logits = torch.cat(
+            [
+                expected_logits[0][
+                    0, :, conditional_length - target_frames : conditional_length
+                ],
+                expected_logits[0][1, :, :target_frames],
+            ],
+            dim=1,
+        )
         torch.testing.assert_close(
-            actual_logits[0], expected_logits[0], rtol=1e-4, atol=1e-5
+            actual_logits[0], expected_target_logits, rtol=1e-4, atol=1e-5
         )
         for actual, expected_code in zip(actual_codes, expected_codes, strict=True):
             torch.testing.assert_close(actual.cpu(), expected_code, rtol=0, atol=0)
