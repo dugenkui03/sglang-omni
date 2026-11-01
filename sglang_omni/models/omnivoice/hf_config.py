@@ -41,9 +41,16 @@ class GenerationOptions(BaseModel):
     num_step: int = Field(default=32, gt=0, strict=True)
     guidance_scale: float = Field(default=2.0, ge=0, strict=True)
     t_shift: float = Field(default=0.1, gt=0, strict=True)
+    # tip 默认值 5，标识从第0层凯斯哈，每一层的分数惩罚 5 * layer_index，层数越多，惩罚力度越多
     layer_penalty_factor: float = Field(default=5.0, ge=0, strict=True)
-    position_temperature: float = Field(default=5.0, ge=0, strict=True)
+    # note
+    #   这里有两个 temperature，影响的分别是：
+    #       class_temperature：对于 [8, target_audio_frames, audio_vocab_size] 中[8, target_audio_frames] 个位置的 audio_vocab_size 个位置分数进行加权，影响每个位置选中的 audio code
+    #       position_temperature：是在 class_temperature 影响之下，已经确定 [8, target_audio_frames] 个位置要选择元素及其对应的概率（audio_vocab_size个元素内部计算的概率值）
+    #           在  [8, target_audio_frames] 中选择要填充哪个位置的时候，通过 position_temperature 加上随机因素
     class_temperature: float = Field(default=0.0, ge=0, strict=True)
+    # [8, target_audio_frames, audio_vocab_size]，此处返回的是 audio_vocab_size 中最大的一个值、所以形状是 [8, target_audio_frames]
+    position_temperature: float = Field(default=5.0, ge=0, strict=True)
     denoise: bool = Field(default=True, strict=True)
     duration: float | None = Field(default=None, gt=0, strict=True)
     audio_chunk_duration: float = Field(default=15.0, gt=0, strict=True)

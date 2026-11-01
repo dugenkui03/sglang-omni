@@ -296,7 +296,7 @@ def generate_batch(
             if not items:
                 continue
             try:
-                # NOTE 推理核心代码？
+                # NOTE 推理核心代码
                 codes = sample_batch(items, model, tokenizer, is_cancelled)
                 for index, generated in zip(active, codes, strict=True):
                     if isinstance(generated, Exception):

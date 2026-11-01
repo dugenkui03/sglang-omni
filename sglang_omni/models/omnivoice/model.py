@@ -60,7 +60,7 @@ class OmniVoiceModel(PreTrainedModel):
         audio_mask: torch.Tensor,  # [batch_size * 2, max_seq_len]
         attention_mask: torch.Tensor,  # [batch_size * 2, 1, max_seq_len, max_seq_len]
         *,
-        target_position_indices: torch.Tensor,
+        target_position_indices: torch.Tensor, # [x] 一维的 tensor，元素值是目标音频对应的位置；另外之所以是一维是因为将 batch_size * 2 和每个batch中的 max_seq_length 打平了
     ) -> torch.Tensor:
         """完整序列经过主干后，仅投影目标音频位置。
 
@@ -100,17 +100,33 @@ class OmniVoiceModel(PreTrainedModel):
             return_dict=True,
         ).last_hidden_state # NOTE 【重要】对于 transformer layer/ transformer 主干，输入形状和输出形状不变
 
-        # 先取目标位置的完整向量，省去上下文与 Padding 的输出头计算。
-        # [batch_size * 2, max_seq_len, hidden_size] → [total_target_frames * 2, hidden_size]
+        # note
+        #  获取结果音频位置的 [x, hidden_size] 数据，后边进行 audio_heads(lm_head)计算的时候仅仅计算这些位置
+        #  【重要】每个位置的 audio_heads 计算都是相对独立的、不管是不是在同一个请求中
+        #       audio_heads 之后获取8层编码信息之后进行 sample 的时候，才会考虑是否是在同一个请求中（比如一个推理中每个 step 要填充的音频数量不一致）
+        #  flatten 作用：[batch_size * 2, max_seq_len, hidden_size] → [total_target_frames * 2, hidden_size]
         target_hidden_states = hidden_states.flatten(0, 1).index_select(
-            0, target_position_indices
+            0, # 表示沿着第0维度，获取这个维度要获取的 target_position_indices 值
+            target_position_indices
         )
         logits = self.audio_heads(target_hidden_states)
 
-        # 每个目标位置仍计算全部码本；序列顺序为全部条件目标、全部无条件目标。
+        # note
+        #  结果形状 [8, total_target_frames * 2, audio_vocab_size]
+        #  三维tensor，比如 shape = (1,1,3) 时
+        #   [
+        #       [  // 第一维度
+        #          [ // 第二维度
+        #              1，2，3 // 第三维度
+        #           ]
+        #       ]
+        #   ]
+        #  第三个维度是某一层的audio code 在所有可选的 audio vocab 的概率分布，这个是不变的
         return logits.view(
-            target_hidden_states.shape[0],
-            self.config.num_audio_codebook,
+            # x.shape 是 [total_target_frames * 2, hidden_size], 获取[0] 就是 第一个元素 total_target_frames * 2
+            #   另外 .shape 属性类型是 torch.Size
+            target_hidden_states.shape[0], # tip total_target_frames * 2
+            self.config.num_audio_codebook, # 8
             self.config.audio_vocab_size,
         ).permute(1, 0, 2)
 
