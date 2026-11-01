@@ -355,13 +355,15 @@ def predict_tokens(
     mask_id: int,
     generator: torch.Generator,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """在 log-probability 上进行 CFG，返回候选码本及置信度。"""
-    log_probs = conditional.float().log_softmax(dim=-1)
+    """将 CFG 合并为一次 log-softmax，返回候选编号及位置置信度。"""
+    guided_logits = conditional.float()
     if options.guidance_scale != 0:
-        unconditioned = unconditional.float().log_softmax(dim=-1)
-        log_probs = (
-            log_probs + options.guidance_scale * (log_probs - unconditioned)
-        ).log_softmax(dim=-1)
+        # 两个分支的归一化常量会在最终 log-softmax 中抵消；先转 FP32 再计算引导。
+        guided_logits = (
+            (1 + options.guidance_scale) * guided_logits
+            - options.guidance_scale * unconditional.float()
+        )
+    log_probs = guided_logits.log_softmax(dim=-1)
     log_probs[..., mask_id] = -float("inf")
     if options.class_temperature > 0:
         count = math.ceil(log_probs.shape[-1] * 0.1)
