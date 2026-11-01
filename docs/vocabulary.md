@@ -75,3 +75,11 @@
 - [adj] Related to time.
   - Example: Audio tokens are arranged along the temporal dimension.
   - In this paper: the temporal dimension represents the time steps of the audio sequence.
+
+### scatter
+
+/ˈskætə(r)/
+
+- [v] To spread things over different places.
+  - Example: Scatter the values into the selected positions.
+  - In Tensor operations: write values to positions given by indices.

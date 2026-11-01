@@ -36,8 +36,8 @@ class SamplingItem:
     request_id: str
     state: OmniVoiceState
     text: str
-    target_frames: int
-    generator: torch.Generator
+    target_frames: int # 这个请求生成的目标帧数量
+    generator: torch.Generator # 随机数生成器
 
 
 def plan_chunks(state: OmniVoiceState, frame_rate: float) -> None:
@@ -339,16 +339,30 @@ def unmask_schedule(
 
 
 def gumbel_scores(
-    scores: torch.Tensor, temperature: float, generator: torch.Generator
+    scores: torch.Tensor, # 某一个推理的多个位置的对数概率值
+    temperature: float, # 温度
+    generator: torch.Generator
 ) -> torch.Tensor:
-    """使用请求自己的随机数源，不修改进程级 RNG。"""
+    """
+        这里是发挥 temperature 的作用，修改 scores 中的对数概率值（把对数概率值理解成分数就行、分数不一定是logits）
+    """
+    # note 【重要】这个 tensor 中的随机数影响了 scores 中每个元素的相对大小（温度值决定了这个随机数对相对大小影响的难易程度）
     noise = torch.rand(
-        scores.shape, dtype=scores.dtype, device=scores.device, generator=generator
+        scores.shape,
+        dtype=scores.dtype,
+        device=scores.device,
+        generator=generator
     )
+    # 等价表达
+    # gumbel_noise = -torch.log(-torch.log(noise + 1e-10) + 1e-10)
+    # return scores / temperature + gumbel_noise
+    # note temperature 越大， scores / temperature 的值越小、scores / temperature 相对于 gumbel_noise 越小，score 在最终的结果中影响越小
+    #   由此实现温度值影响随机性
     return scores / temperature - torch.log(-torch.log(noise + 1e-10) + 1e-10)
 
 
 def predict_tokens(
+    # NOTE cond 和 uncond 返回的结果，形状都是 [8, target_audio_frames, audio_vocab_size]，audio_vocab_size 中每个元素都是这个元素相对于其他元素被选中的分数
     conditional: torch.Tensor,
     unconditional: torch.Tensor,
     options: GenerationOptions,
@@ -361,36 +375,70 @@ def predict_tokens(
     guided_logits = conditional.float()
 
     if options.guidance_scale != 0:
+        # note guidance_scale 是条件引导放大因子，加强条件相对无条件的影响。
         # 两个分支的归一化常量会在最终 log-softmax 中抵消；先转 FP32 再计算引导。
         guided_logits = (
             (1 + options.guidance_scale) * guided_logits
             - options.guidance_scale * unconditional.float()
         )
+
+    # tip dim = -1
+    #   对 dim=-1 的元素列表转换成对数概率
+    #   计算步骤（假设每个元素分别是 s1, s2, ... sn，n 是 audio_vocab_size）
+    #       1）计算每个元素中间结果：e^s1 ....
+    #       2) 计算出每个元素的概率：中间结果 e^s1 除以 sum（e^sx)，得到概率值 prob_1, prob_2 ...
+    #       3) 计算出对数概率 ln(prob_1) ...
+    #   结果形状还是 [8, target_audio_frames, audio_vocab_size]
     log_probs = guided_logits.log_softmax(dim=-1)
+
+    # tip
+    #   log_probs[..., mask_id] 等价于 log_probs[:, :, mask_id]，其中 ... 补全前边所有的维度， mask_id 标识获取 mask_id 位置的元素
+    #   note 整体效果就是将 [8, target_audio_frames, audio_vocab_size] 中最后一维 audio_vocab_size 中下标是 mask_id 的元素设置为负无穷
     log_probs[..., mask_id] = -float("inf")
+
     if options.class_temperature > 0:
+        # audio_vocab_size * 0.1
         count = math.ceil(log_probs.shape[-1] * 0.1)
+
+        # note 在最后一维的 audio_vocab_size 个元素中，选择出最大的 count 个元素、也就是 10% 的元素
+        #   value 前10%最大的元素， indices 是这些元素对应的下标、可以映射到 audio_code 上
+        #   value 和 indices 形状是 [8, target_audio_frames, audio_vocab_size/10]
+        # 作用是 log_probs 中每个位置、仅仅获取到前 10% 的元素，其他地方都设置为 负无穷
         values, indices = log_probs.topk(count, dim=-1)
-        filtered = torch.full_like(log_probs, -float("inf")).scatter(
-            -1, indices, values
+        filtered = torch.full_like(
+            log_probs,  # 创建和 log_probs 相同形状的tensor
+            -float("inf") # 所有元素都用负无穷
+        ).scatter(
+            dim = -1, # 沿着最后一个维度
+            index = indices, # 仅仅在指定下标的位置、按照顺序填充 src 的值
+            src = values
         )
+        # tip 通过维度值修改每个元素被选中的概率
         predicted = gumbel_scores(
-            filtered, options.class_temperature, generator
-        ).argmax(dim=-1)
+            filtered, # tip 每个元素是概率值
+            options.class_temperature, # 温度
+            generator #
+        ).argmax(dim=-1) # NOTE argmax 表示沿着最后一维找最大值、注意，返回的是最大值下标
     else:
         predicted = log_probs.argmax(dim=-1)
+
+    # predicted 形状是 [8, target_audio_frames]，标识每个位置实际选取的 audio code 的位置
+    # log_probs.max(dim=-1).values 是不考虑温度值、每个位置选取的 audio_code 对应的分数
+    #   note 注意，log_probs 形状是 [8, target_audio_frames, audio_vocab_size]，此处返回的是 audio_vocab_size 中最大的一个值、所以形状是 [8, target_audio_frames]
     return predicted, log_probs.max(dim=-1).values
 
 
 @torch.inference_mode()
 def sample_batch(
-    items: list[SamplingItem], # note 每一个请求都是一个请求
+    items: list[SamplingItem], # note 每一个请求都是一个元素
     model: OmniVoiceModel,
     tokenizer: PreTrainedTokenizerBase, # tip 文本tokenizer
     is_cancelled: CancellationCheck,
 ) -> list[torch.Tensor | Exception]:
     """
-       文本 token、参考 audio codes、目标 mask 组成输入
+       1. 组成输入： 文本 token、参考 audio codes、目标 mask
+       2. 推理
+       3. 采样
     """
     if not items:
         return []
@@ -400,6 +448,9 @@ def sample_batch(
     results: dict[int, torch.Tensor | Exception] = {}
     valid_indices: list[int] = []
     valid_items: list[SamplingItem] = []
+    # note: inputs 两个 tensor 的内容
+    #   [8, sequence_length]：style + 文本 token + 参考音频 codes + 目标音频 mask
+    #   [sequence_length]: mask，标记哪些地方是音频
     inputs: list[tuple[torch.Tensor, torch.Tensor]] = []
     for index, item in enumerate(items):
         try:
@@ -430,39 +481,82 @@ def sample_batch(
         [item.target_frames for item in items],
         model.config.audio_mask_id
     )
+
     batch_size = len(items)
-    max_sequence_length = input_ids.shape[-1]
+    max_sequence_length = input_ids.shape[-1] # tip 就是 input 的 seq length
+
+    # note 条件分支中目标音频各帧的位置下标
     conditional_target_indices: list[torch.Tensor] = []
+    # note 同上，但是是 非条件分支
     unconditional_target_indices: list[torch.Tensor] = []
+    # note 这里保存的不是原始输入 tensor 中的信息
+    #   而是 forward 结束之后，会仅仅获取 target audio 位置的 hidden states 序列，形状是 [target_audio_frames * 2, hidden_size]
+    #   这个列表每个元素保存的是获取从第一个请求开始的对应结果在 [target_audio_frames * 2, hidden_size] 中的下标
     target_frame_offsets: list[int] = []
     total_target_frames = 0
+
     # 每段生成只构造一次索引，所有轮次复用；已填好的目标位置仍保留。
     for request_index, ((request_input_ids, _), item) in enumerate(
         zip(inputs, items, strict=True)
     ):
+        """
+            request_index 数据下标，从0开始
+            request_input_ids：包括 text, ref_audio，注意这个是原始输入
+            item: SamplingItem
+        """
+
+        # note 保存「条件分支中目标音频各帧的位置下标」。一维 tensor、长度同目标音频frame数量
         target_positions = torch.arange(
-            item.target_frames, dtype=torch.long, device=model.device
+            item.target_frames, # 目标音频长度，每一帧40ms
+            dtype=torch.long,
+            device=model.device
         )
+
+        # tip 条件分支中目标音频各帧的位置下标
         conditional_target_indices.append(
-            request_index * max_sequence_length
-            + request_input_ids.shape[-1]
-            - item.target_frames
-            + target_positions
+            # 加上一维 Tensor，得到所有目标帧的具体位置
+            # tip 注意，target_positions 是一维tensor，后边都是整数，所以后边的整数都是对这个tensor元素的操作
+            target_positions
+            + request_index * max_sequence_length # 整数，该请求展平后的起始位置：0、max_sequence_length、2*max_sequence_length……
+            + request_input_ids.shape[-1] # 整数，该请求补齐前的实际长度，包含上下文和目标音频位置
+            - item.target_frames # 目标帧数：减去目标帧数得到目标音频区域的起始位置
         )
+
+        # tip： 同上，但是保存的是 unconditional 的结果位置下标
         unconditional_target_indices.append(
-            (batch_size + request_index) * max_sequence_length + target_positions
+            target_positions
+            + (batch_size + request_index) * max_sequence_length
         )
+        # tip
+        #   第一个元素是0
+        #   后边的每个都是目标音频长度
         target_frame_offsets.append(total_target_frames)
+        # 总的目标音频长度
         total_target_frames += item.target_frames
-    # 对应展平后的 hidden_states，排列为全部条件目标、全部无条件目标。
+
+    # cat 表示按照 dim 维度进行拼接
+    #   指定维度的长度相加，元素数值不变
+    #   这里每个 Tensor 都是一维的，拼接后仍是一维，不会增加 batch 维度
+    # 拼接结果 shape=[2 * total_target_frames]
+    #   total_target_frames 是所有请求的目标音频帧数之和
+    #   元素是目标位置在展平后的 hidden_states 中的全局下标
+    #   全部条件分支的目标下标在前，全部无条件分支的目标下标在后
     target_position_indices = torch.cat(
-        conditional_target_indices + unconditional_target_indices
+        # 列表相加就是拼接成一个列表
+        conditional_target_indices + unconditional_target_indices,
+        dim=0 # 默认值
     )
+
+    # 默认值是8
     num_audio_codebook = model.config.num_audio_codebook
+    # tokens 是个list，每个元素保存的是每个请求中 [8, target_audio_frames] 个位置选中的 audio code 编号
+    #   随着每一步推理，里边的元素逐渐被填充
+    #   用来辅助判断某个位置是否已经获取了结果
     tokens = [
         torch.full(
-            # [8, x]
+            # 形状 [8, target_audio_frames]
             (num_audio_codebook, item.target_frames),
+            # 元素默认值
             model.config.audio_mask_id, # 1024
             dtype=torch.long,
             device=model.device,
@@ -482,8 +576,7 @@ def sample_batch(
         if all(cancelled):
             break
 
-        # 每轮主干仍处理完整输入，输出头仅返回目标位置并转为 FP32。
-        # logits: [num_audio_codebook, total_target_frames * 2, audio_vocab_size]
+        # NOTE 注意，这里仅仅返回的是 目标音频区域的 logits 信息，形状是 [num_audio_codebook, total_target_frames * 2, audio_vocab_size]
         logits = model(
             input_ids,
             audio_mask,
@@ -500,14 +593,24 @@ def sample_batch(
             count = schedules[index][step]
             if cancelled[index] or count == 0:
                 continue
-            # 总的有效长度和结果长度
-            length, frames = inputs[index][0].shape[-1], item.target_frames
-            target_frame_offset = target_frame_offsets[index]
-            unconditional_frame_offset = total_target_frames + target_frame_offset
 
-            # NOTE TODO
+            # 总的有效长度：包括输入和输出
+            # note 和结果长度：仅仅包括输出
+            length, frames = inputs[index][0].shape[-1], item.target_frames
+
+            # tip 第 x 个请求在对应的结果在 logits 中的开始位置如下
+            target_frame_offset = target_frame_offsets[index]
+            unconditional_frame_offset = total_target_frames + target_frame_offset # 补一个 total_target_frames 就好
+
+            # NOTE 按照 CFG(classifier free guidance) 和温度值选择 8 * target_frames 位置的 audio code
+            #   注意，predicted 是不管有没有温度值、每个位置最终选择的 audio code 的位置
+            #       scores 是不考虑温度值，每个位置最大对数概率值
+            #       原因是：选择填充的位置 score、选择置信度最大的位置，但是填充的时候允许温度影响、选择到另外一个值
+            #   形状都是 [8, target_frames]
             predicted, scores = predict_tokens(
+                # tip 第一个维度是8，然后从开始位置、截取目标音频长度的位置
                 logits[:, target_frame_offset : target_frame_offset + frames],
+                # 同上，unconditional
                 logits[
                     :, unconditional_frame_offset : unconditional_frame_offset + frames
                 ],
@@ -515,17 +618,41 @@ def sample_batch(
                 model.config.audio_mask_id,
                 item.generator,
             )
+
+            # note 这个是对 scores 中的数据按元素做减法
+            #   层数越大，惩罚力度越大
+            #   scores 中的数据实际是对数概率
             scores = scores - layer_indices * options.layer_penalty_factor
+
             if options.position_temperature > 0:
+                # tip 这个温度值影响的是，在 [8, target_audio_frames] 中选择哪些位置填充结果audio code的时候加上随机因素
                 scores = gumbel_scores(
-                    scores, options.position_temperature, item.generator
+                    scores,
+                    options.position_temperature,
+                    item.generator
                 )
+
+            # 已经选中的元素，即结果不是audio_mask_id的元素，直接设置为负无穷
             scores.masked_fill_(
-                tokens[index] != model.config.audio_mask_id, -float("inf")
+                # note
+                #   tokens 中保存了已经选中的元素，tokens[index] 中保存了第 n 个请求已经被选中的元素，形状是 [8, target_audio_frames]
+                #   tokens[index] != model.config.audio_mask_id 是tensor的逐元素计算：结果形状同原始 tensor tokens[index]，结果元素是每个元素和 audio_mask_id 做 != 比较
+                #   tokens[index] 形状不一定要和scores相同，但是要能广播成相同形状
+                tokens[index] != model.config.audio_mask_id,
+                -float("inf") # the value to fill in with
             )
+            # tip scores 中选出分数最高的 count 个元素的位置:flatten 先将 [8, target_audio_frames] 打平成 [8 * target_audio_frames]，然后在选择 top count 个最大的值的位置
             positions = scores.flatten().topk(count).indices
+            #   positions 形状是 [count]，保存了选择 [8 * target_audio_frames] 中哪些位置的元素
+            #   predicted.flatten() [8 * target_audio_frames]，保存了每个位置最终选择的元素的位置，比如[5, ...] 标识第一个位置选择了第5个 audio code
+            #   tip predicted.flatten()[positions] 标识：选中了 positions 这些位置、返回这些位子选中的audio code 次序（返回选中位置的选中元素），然后赋值给 tokens[index].view(-1)[positions]
             tokens[index].view(-1)[positions] = predicted.flatten()[positions]
-            input_ids[index, :, length - frames : length] = tokens[index]
+
+            # NOTE 【很重要】将最终选择的 audio code 放到原始输入：conditional 和 unconditional 中
+            #   index：第几个请求
+            #   :, ：第几层 audio codebook
+            #   length-frames: length：目标音频位置
+            input_ids[index, :, length - frames : length] = tokens[index] # tip 选中的 audio code 在 audio vocab 中的位置就是 audio code 的值
             input_ids[batch_size + index, :, :frames] = tokens[index]
         del logits
     for index, item, codes in zip(valid_indices, items, tokens, strict=True):
