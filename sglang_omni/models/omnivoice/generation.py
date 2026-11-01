@@ -356,7 +356,10 @@ def predict_tokens(
     generator: torch.Generator,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """将 CFG 合并为一次 log-softmax，返回候选编号及位置置信度。"""
+
+    # tip x.float() 将 tensor 中所有元素都转换成 torch.float32（FP32）类型
     guided_logits = conditional.float()
+
     if options.guidance_scale != 0:
         # 两个分支的归一化常量会在最终 log-softmax 中抵消；先转 FP32 再计算引导。
         guided_logits = (
