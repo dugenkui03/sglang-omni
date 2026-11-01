@@ -362,6 +362,7 @@ def create_tts_engine_executor(
         .eval()
         .requires_grad_(False)
     )
+    model.fuse_qkv_projections()
     # tip: text - tokenizer -> text token_id
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
     return scheduler(

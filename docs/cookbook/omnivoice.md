@@ -25,6 +25,8 @@ CPU 数值验证需给三个 GPU Stage 显式设置 `--audio_encoder.factory.dev
 
 ## 请求
 
+生成 Stage 在加载权重后自动调用 `model.fuse_qkv_projections()`，把每层 Q/K/V 合为一次投影；参考编码和 Codec 不变。直接使用 `OmniVoiceModel.from_pretrained()` 时，可在加载后调用同一方法启用优化。保存的检查点仍保留官方 Q/K/V 参数名，重新加载后再启用融合。该实现已完成微型模型 CPU 检查，真实权重及 GPU 验证待评审后进行。
+
 复用 `POST /v1/audio/speech`，参考音频支持受现有媒体权限限制的路径、URL 和 data URL。本地路径需配置 `--allowed-local-media-path`。
 
 ```json
