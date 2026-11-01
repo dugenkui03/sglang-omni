@@ -67,20 +67,71 @@ def test_padding_does_not_leak_between_lengths() -> None:
     assert audio[2].sum() == 2
 
 
-def test_cfg_uses_log_probabilities_and_excludes_mask() -> None:
-    """与明确的 CFG 数学表达式比较，mask 即使最大也不可采样。"""
-    conditional = torch.tensor([[[1.0, 3.0, 20.0]]])
-    unconditional = torch.tensor([[[4.0, 0.0, 3.0]]])
-    options = GenerationOptions(guidance_scale=2.0)
-    actual, confidence = predict_tokens(
-        conditional, unconditional, options, 2, torch.Generator()
+@pytest.mark.parametrize(
+    "guidance_scale,logit_dtype,logit_scale",
+    [
+        pytest.param(0.0, torch.float32, 1.0, id="no-guidance"),
+        pytest.param(0.5, torch.float32, 1.0, id="fractional-guidance"),
+        pytest.param(2.0, torch.float32, 1.0, id="default-guidance"),
+        pytest.param(6.0, torch.float32, 1.0, id="strong-guidance"),
+        pytest.param(2.0, torch.float16, 1.0, id="fp16"),
+        pytest.param(2.0, torch.bfloat16, 1.0, id="bf16"),
+        pytest.param(2.0, torch.float16, 2000.0, id="fp16-large-logits"),
+    ],
+)
+@pytest.mark.parametrize("class_temperature", [0.0, 0.7])
+def test_cfg_matches_log_probability_reference(
+    guidance_scale: float,
+    logit_dtype: torch.dtype,
+    logit_scale: float,
+    class_temperature: float,
+) -> None:
+    """化简须保留原 CFG 的置信度、候选截断、MASK 排除与请求随机状态。"""
+    input_generator = torch.Generator().manual_seed(11)
+    conditional = torch.randn(2, 3, 31, generator=input_generator)
+    unconditional = torch.randn(2, 3, 31, generator=input_generator)
+    mask_id = conditional.shape[-1] - 1
+    conditional[..., mask_id] = 12.0
+    unconditional[..., mask_id] = -8.0
+    conditional = (conditional * logit_scale).to(logit_dtype)
+    unconditional = (unconditional * logit_scale).to(logit_dtype)
+    options = GenerationOptions(
+        guidance_scale=guidance_scale, class_temperature=class_temperature
     )
-    expected = (
-        3 * conditional.log_softmax(-1) - 2 * unconditional.log_softmax(-1)
-    ).log_softmax(-1)
-    expected[..., 2] = -float("inf")
-    assert torch.equal(actual, expected.argmax(-1))
-    torch.testing.assert_close(confidence, expected.max(-1).values)
+    actual_generator = torch.Generator().manual_seed(19)
+    reference_generator = torch.Generator().manual_seed(19)
+    global_random_state = torch.random.get_rng_state().clone()
+    actual, confidence = predict_tokens(
+        conditional, unconditional, options, mask_id, actual_generator
+    )
+    expected = conditional.float().log_softmax(-1)
+    if guidance_scale != 0:
+        unconditional_log_probs = unconditional.float().log_softmax(-1)
+        expected = (
+            expected + guidance_scale * (expected - unconditional_log_probs)
+        ).log_softmax(-1)
+    expected[..., mask_id] = -float("inf")
+    if class_temperature > 0:
+        # 31 个候选保留向上取整后的 4 个，按排名屏蔽以独立核对 top-k 截断。
+        candidate_indices = expected.argsort(dim=-1, descending=True)
+        filtered = expected.clone().scatter(-1, candidate_indices[..., 4:], -float("inf"))
+        uniform_noise = torch.rand(
+            expected.shape, dtype=expected.dtype, generator=reference_generator
+        )
+        expected_codes = (
+            filtered / class_temperature
+            - torch.log(-torch.log(uniform_noise + 1e-10) + 1e-10)
+        ).argmax(-1)
+    else:
+        expected_codes = expected.argmax(-1)
+    assert torch.equal(actual, expected_codes)
+    assert (actual != mask_id).all()
+    assert torch.isfinite(confidence).all()
+    torch.testing.assert_close(
+        confidence, expected.max(-1).values, rtol=1e-5, atol=1e-5
+    )
+    assert torch.equal(actual_generator.get_state(), reference_generator.get_state())
+    assert torch.equal(torch.random.get_rng_state(), global_random_state)
 
 
 def test_iteration_reproducible_and_preserves_global_rng(model, tokenizer) -> None:

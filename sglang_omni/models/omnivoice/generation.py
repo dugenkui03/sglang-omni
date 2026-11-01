@@ -369,27 +369,27 @@ def predict_tokens(
     mask_id: int,
     generator: torch.Generator,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """在 log-probability 上进行 CFG，返回候选码本及置信度。"""
+    """将 CFG 合并为一次 log-softmax，返回候选编号及位置置信度。"""
+
+    # tip x.float() 将 tensor 中所有元素都转换成 torch.float32（FP32）类型
+    guided_logits = conditional.float()
+
+    if options.guidance_scale != 0:
+        # note guidance_scale 是条件引导放大因子，加强条件相对无条件的影响。
+        # 两个分支的归一化常量会在最终 log-softmax 中抵消；先转 FP32 再计算引导。
+        guided_logits = (
+            (1 + options.guidance_scale) * guided_logits
+            - options.guidance_scale * unconditional.float()
+        )
 
     # tip dim = -1
     #   对 dim=-1 的元素列表转换成对数概率
-    #   计算步骤（假设每个元素分别是 s1, s2, ... sn，n 是 hidden_size）
+    #   计算步骤（假设每个元素分别是 s1, s2, ... sn，n 是 audio_vocab_size）
     #       1）计算每个元素中间结果：e^s1 ....
     #       2) 计算出每个元素的概率：中间结果 e^s1 除以 sum（e^sx)，得到概率值 prob_1, prob_2 ...
     #       3) 计算出对数概率 ln(prob_1) ...
     #   结果形状还是 [8, target_audio_frames, audio_vocab_size]
-    log_probs = conditional.float().log_softmax(dim=-1)
-
-    if options.guidance_scale != 0:
-        # tip 计算出 uncondition 链路的 log prob
-        unconditioned = unconditional.float().log_softmax(dim=-1)
-        log_probs = (
-            # note
-            #   log_probs - unconditioned：计算的是每个 audio_code 位置中、每个元素因为加上条件，其被选中的概率变化
-            #   guidance_scale：条件因素放大因子
-            #   log_probs + x：加强条件因素对元素选中概率的影响
-            log_probs + options.guidance_scale * (log_probs - unconditioned)
-        ).log_softmax(dim=-1) # 在求一次对数概率
+    log_probs = guided_logits.log_softmax(dim=-1)
 
     # tip
     #   log_probs[..., mask_id] 等价于 log_probs[:, :, mask_id]，其中 ... 补全前边所有的维度， mask_id 标识获取 mask_id 位置的元素

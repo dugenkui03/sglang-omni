@@ -78,7 +78,9 @@
 
 #### 13. CFG 化简（Single Log-softmax CFG）
 
-- [ ] 参考 V1 `_unmask_one_request()` 与 `forward()`，把多次 log-softmax 化简为 `log_softmax((1+s)*conditional - s*unconditional)`。数学等价，浮点结果按容差验收；保留屏蔽 mask、类别温度及本项目已有的候选截断规则。
+- [x] 参考 V1 `_unmask_one_request()` 与 `forward()`，已将 CFG 化简为 `log_softmax((1+s)*conditional - s*unconditional)`；先转 FP32 再做引导计算。保留屏蔽 mask、类别温度、top-10% 候选截断和位置置信度规则，CFG 关闭时只归一化条件分支。
+
+2026-11-01 验证：90 项单测／回归通过，包含原三次归一化公式的数值对照（rtol=1e-5、atol=1e-5）、FP16/BF16、随机采样和随机状态检查；4 项官方权重 CPU FP32 对齐通过，生成码本一致、波形最大误差均为 0。GPU 性能待测；缺少 `pre_commit`，全量钩子未运行。
 
 
 ### 1.3 暂不列为实施项
