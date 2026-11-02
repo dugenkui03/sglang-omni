@@ -51,4 +51,6 @@ def model() -> OmniVoiceModel:
             audio_vocab_size=9,
             audio_mask_id=8,
         )
-        return OmniVoiceModel(config).eval()
+        model = OmniVoiceModel(config).eval()
+        model.fuse_qkv_projections()
+        return model

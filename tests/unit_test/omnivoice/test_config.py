@@ -38,7 +38,8 @@ def test_stage_graph_and_device_contract() -> None:
 
 
 def test_checkpoint_roundtrip(model, tmp_path: Path) -> None:
-    """沿用官方模块名称可直接加载 safetensors，不需要权重重映射。"""
+    """融合前沿用官方模块名称，可直接保存与加载 safetensors。"""
+    model = OmniVoiceModel(model.config).eval()
     model.save_pretrained(tmp_path)
     restored = OmniVoiceModel.from_pretrained(
         tmp_path, dtype=torch.float32, attn_implementation="sdpa"

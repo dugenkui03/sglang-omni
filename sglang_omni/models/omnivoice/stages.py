@@ -362,6 +362,8 @@ def create_tts_engine_executor(
         .eval()
         .requires_grad_(False)
     )
+    # NOTE 拼接 qkv 的投影proj，后边一次性计算出qkv
+    model.fuse_qkv_projections()
     # tip: text - tokenizer -> text token_id
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
     return scheduler(
