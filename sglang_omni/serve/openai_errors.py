@@ -46,6 +46,7 @@ _BAD_REQUEST_MARKERS = (
     "AuK requires a natural-language",
     "AuK accepts at most one",
     "AuK expected a",
+    "OmniVoice request:",
     "AuK references must be",
     "PersonaPlex request needs",
     "PersonaPlex needs at least one 80 ms frame",

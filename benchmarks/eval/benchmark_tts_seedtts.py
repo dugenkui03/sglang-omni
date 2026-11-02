@@ -158,6 +158,16 @@ _AUK_BENCHMARK_PROFILE = _ModelBenchmarkProfile(
     forward_sglang_engine=False,
 )
 _MODEL_BENCHMARK_PROFILES: dict[str, _ModelBenchmarkProfile] = {
+    "omnivoice": _ModelBenchmarkProfile(
+        argument_defaults={
+            "output_dir": "results/omnivoice_seedtts",
+            "concurrency": 1,
+            "warmup": 1,
+            "seed": 1234,
+        },
+        forward_sglang_engine=False,
+        max_new_tokens=None,
+    ),
     "auk": _AUK_BENCHMARK_PROFILE,
     "auk-flash": _AUK_BENCHMARK_PROFILE,
     # note (Yucheng Hu): Fun-CosyVoice3 caps generation at min(2048, 20x target

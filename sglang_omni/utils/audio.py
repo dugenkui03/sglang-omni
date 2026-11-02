@@ -312,7 +312,7 @@ def audio_request_timeout() -> int:
 
 
 def load_audio(
-    source: object,
+    source: object, # NOTE 音频来源，如文件路径、URL、data URI 或音频字节
     source_name: str = "audio",
     target_sample_rate: int = 16000,
     mono: bool = True,
