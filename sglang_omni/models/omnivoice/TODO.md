@@ -40,7 +40,7 @@
 
 #### 03. 合并 MLP 投影及激活（Fused Gate/Up、SwiGLU）
 
-- [ ] 参考 O1 `_patch_mlp()`、V1 `OmniVoiceMLP` 和 `triton_swiglu()`，合并 gate/up 投影，融合 SiLU 与逐元素乘法，避免拆分后的额外复制。
+- [ ] Gate/Up 投影合并代码已实现（2026-11-03，待验收）：参考 O1 `_patch_mlp()`、V1 `OmniVoiceMLP`，加载后调用 `fuse_gate_up_projections()`，在 `mlp.py` 中拼接权重、一次 F.linear、chunk 拆分；保留原 SiLU、逐元素乘法及 down_proj。新增微型对照测试但未运行，仅做静态检查，未下载权重。SiLU／乘法的内核融合仍待后续单独实现。
 
 #### 04. 归一化融合（Fused RMSNorm）
 

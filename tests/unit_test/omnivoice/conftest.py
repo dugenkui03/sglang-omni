@@ -53,4 +53,5 @@ def model() -> OmniVoiceModel:
         )
         model = OmniVoiceModel(config).eval()
         model.fuse_qkv_projections()
+        model.fuse_gate_up_projections()
         return model

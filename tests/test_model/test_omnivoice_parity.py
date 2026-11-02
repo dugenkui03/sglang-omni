@@ -69,6 +69,7 @@ def models():
             .eval()
         )
         native.fuse_qkv_projections()
+        native.fuse_gate_up_projections()
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         codec = load_codec(checkpoint, device)
         yield upstream, native, tokenizer, codec, reference, reference_text
