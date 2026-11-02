@@ -54,8 +54,7 @@ class OmniVoiceModel(PreTrainedModel):
     def fuse_qkv_projections(self) -> None:
         """权重加载完成后合并各层 QKV；重复调用不会再次分配权重。"""
         for layer in self.llm.layers:
-            # tip 遍历模型每层 transformer layer
-            # note 直接复用这一层的 attn 对象，仅融合 QKV 并替换 forward。
+            # 对每一层的 self attn 做转换
             fuse_qkv_attention(layer.self_attn)
 
     def get_input_embeddings(self) -> nn.Embedding:
