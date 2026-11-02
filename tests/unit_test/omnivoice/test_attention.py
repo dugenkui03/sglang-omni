@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """验证合并投影的注意力等价性及实际执行次数。"""
 
+from copy import deepcopy
 from unittest.mock import patch
 
 import pytest
@@ -11,7 +12,7 @@ from transformers.models.qwen3.modeling_qwen3 import (
     Qwen3RotaryEmbedding,
 )
 
-from sglang_omni.models.omnivoice.attention import FusedQwen3Attention
+from sglang_omni.models.omnivoice.attention import fuse_qkv_attention
 from sglang_omni.models.omnivoice.model import OmniVoiceModel
 
 
@@ -40,7 +41,8 @@ def test_fused_attention_matches_separate_projections(
     embeddings = rotary(hidden_states, torch.arange(5).unsqueeze(0))
     attention_mask = torch.ones(2, 1, 5, 5, dtype=torch.bool)
     attention_mask[0, :, :, 3:] = False
-    fused = FusedQwen3Attention(reference)
+    fused = deepcopy(reference)
+    fuse_qkv_attention(fused)
     parameter_count = sum(parameter.numel() for parameter in reference.parameters())
     assert sum(parameter.numel() for parameter in fused.parameters()) == parameter_count
     assert not {"q_proj", "k_proj", "v_proj"}.intersection(dict(fused.named_children()))

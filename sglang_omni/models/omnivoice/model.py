@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from transformers import PreTrainedModel, Qwen3Model
 
-from sglang_omni.models.omnivoice.attention import FusedQwen3Attention
+from sglang_omni.models.omnivoice.attention import fuse_qkv_attention
 from sglang_omni.models.omnivoice.hf_config import OmniVoiceConfig
 
 
@@ -54,8 +54,9 @@ class OmniVoiceModel(PreTrainedModel):
     def fuse_qkv_projections(self) -> None:
         """权重加载完成后合并各层 QKV；重复调用不会再次分配权重。"""
         for layer in self.llm.layers:
-            if not isinstance(layer.self_attn, FusedQwen3Attention):
-                layer.self_attn = FusedQwen3Attention(layer.self_attn)
+            # tip 遍历模型每层 transformer layer
+            # note 直接复用这一层的 attn 对象，仅融合 QKV 并替换 forward。
+            fuse_qkv_attention(layer.self_attn)
 
     def get_input_embeddings(self) -> nn.Embedding:
         # tip self.llm 初始化的时候赋值 Qwen3TTS 模型， embed_tokens 是这个字段的固定属性
