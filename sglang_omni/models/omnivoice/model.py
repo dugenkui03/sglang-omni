@@ -8,6 +8,7 @@ from transformers import PreTrainedModel, Qwen3Model
 
 from sglang_omni.models.omnivoice.attention import fuse_qkv_attention
 from sglang_omni.models.omnivoice.hf_config import OmniVoiceConfig
+from sglang_omni.models.omnivoice.mlp import fuse_gate_up_mlp
 
 
 class OmniVoiceModel(PreTrainedModel):
@@ -53,9 +54,15 @@ class OmniVoiceModel(PreTrainedModel):
 
     def fuse_qkv_projections(self) -> None:
         """权重加载完成后合并各层 QKV；重复调用不会再次分配权重。"""
+        # NOTE 遍历所有 transformer layer
         for layer in self.llm.layers:
-            # 对每一层的 self attn 做转换
+            # note 对每一层的 self attn 注意力计算模块做变换
             fuse_qkv_attention(layer.self_attn)
+
+    def fuse_gate_up_projections(self) -> None:
+        """权重加载完成后，就地合并每个 Transformer 层的 Gate/Up 投影。"""
+        for layer in self.llm.layers:
+            fuse_gate_up_mlp(layer.mlp)
 
     def get_input_embeddings(self) -> nn.Embedding:
         # tip self.llm 初始化的时候赋值 Qwen3TTS 模型， embed_tokens 是这个字段的固定属性
