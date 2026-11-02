@@ -34,9 +34,9 @@
 
 #### 02. 合并 QKV 投影（Fused QKV Projection）
 
-- [ ] 代码已实现，待 GPU 验收：参考 O1 `_patch_attention_forward()`、V1 `OmniVoiceAttention`，在权重加载后通过 `fuse_qkv_projections()` 替换各层注意力模块；一次投影后按 Q/K/V 各自宽度拆分，保留原有归一化、RoPE、SDPA 和输出投影。保存／重新加载仍使用官方 Q/K/V 参数名。
+- [ ] 代码已实现，待 GPU 验收：参考 O1 `_patch_attention_forward()`、V1 `OmniVoiceAttention`，在权重加载后通过 `fuse_qkv_projections()` 替换各层注意力模块；一次投影后按 Q/K/V 各自宽度拆分，保留原有归一化、RoPE、SDPA 和输出投影。本次仅保留推理融合，不提供融合后检查点的保存／重载格式转换。
 
-2026-11-02：17 项随机初始化微型模型 CPU 单测通过，覆盖 GQA/MHA、偏置、FP32/FP16/BF16、调用次数与检查点往返。按用户要求先交付代码评审，未下载权重，未执行本次真实权重对齐、完整回归或 GPU 性能测试。
+2026-11-02：初版曾通过 17 项微型模型 CPU 测试；随后按用户要求删除保存／重载兼容层，改为直接拼接权重、F.linear 和 split。简化版仅做静态检查，保留注意力对照测试待后续运行；未下载权重，未执行真实权重对齐或 GPU 性能测试。
 
 #### 03. 合并 MLP 投影及激活（Fused Gate/Up、SwiGLU）
 

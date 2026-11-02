@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-"""验证合并投影的注意力等价性、检查点兼容性及实际执行次数。"""
+"""验证合并投影的注意力等价性及实际执行次数。"""
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -66,52 +65,12 @@ def test_fused_attention_matches_separate_projections(
     torch.testing.assert_close(modified_output[0, :3], actual[0, :3])
     torch.testing.assert_close(modified_output[1], actual[1])
 
-    state_dict = reference.state_dict()
-    exported = fused.state_dict()
-    assert exported.keys() == state_dict.keys()
-    for name in state_dict:
-        torch.testing.assert_close(exported[name], state_dict[name], rtol=0, atol=0)
-    state_dict["q_proj.weight"] = state_dict["q_proj.weight"] + 0.25
-    reference.load_state_dict(state_dict)
-    fused.load_state_dict(state_dict, strict=True)
-    torch.testing.assert_close(
-        fused(hidden_states, embeddings, attention_mask)[0],
-        reference(hidden_states, embeddings, attention_mask)[0],
-        rtol=tolerance,
-        atol=tolerance,
-    )
-    incomplete = dict(state_dict)
-    incomplete.pop("k_proj.weight")
-    with pytest.raises(ValueError, match="Incomplete QKV"):
-        fused.load_state_dict(incomplete)
-
 
 @torch.inference_mode()
-def test_fused_model_checkpoint_roundtrip(model: OmniVoiceModel, tmp_path: Path) -> None:
-    """融合后保存仍使用官方三组参数名，恢复后可再次融合及转换 dtype。"""
-    before = {name: tensor.clone() for name, tensor in model.state_dict().items()}
-    model.fuse_qkv_projections()
+def test_fusion_is_idempotent(model: OmniVoiceModel) -> None:
+    """重复启用不重新拼接权重，保留已创建的注意力对象。"""
     attention = model.llm.layers[0].self_attn
+    weight = attention.qkv_weight
     model.fuse_qkv_projections()
     assert model.llm.layers[0].self_attn is attention
-    model.save_pretrained(tmp_path, max_shard_size="10KB")
-    restored, loading_info = OmniVoiceModel.from_pretrained(
-        tmp_path, dtype=torch.float32, attn_implementation="sdpa", output_loading_info=True
-    )
-    assert loading_info["missing_keys"] == set()
-    assert loading_info["unexpected_keys"] == set()
-    for name, tensor in restored.state_dict().items():
-        torch.testing.assert_close(tensor, before[name], rtol=0, atol=0)
-    restored.fuse_qkv_projections()
-    model.to(torch.float64)
-    restored.to(torch.float64)
-    input_ids = torch.tensor([[[12, 13, 1, 8], [12, 13, 2, 8]]])
-    audio_mask = torch.tensor([[False, False, True, True]])
-    attention_mask = torch.ones(1, 1, 4, 4, dtype=torch.bool)
-    target_positions = torch.tensor([2, 3])
-    torch.testing.assert_close(
-        model(input_ids, audio_mask, attention_mask, target_position_indices=target_positions),
-        restored(input_ids, audio_mask, attention_mask, target_position_indices=target_positions),
-        rtol=0,
-        atol=0,
-    )
+    assert attention.qkv_weight is weight
