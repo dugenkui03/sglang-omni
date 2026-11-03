@@ -2,6 +2,8 @@
 # Copyright 2026 Xiaomi Corp. (authors: Han Zhu). See LICENSE.
 """OmniVoice 双向注意力主干及八码本输出头。"""
 
+from dataclasses import dataclass
+
 import torch
 from torch import nn
 from transformers import PreTrainedModel, Qwen3Model
@@ -9,6 +11,16 @@ from transformers import PreTrainedModel, Qwen3Model
 from sglang_omni.models.omnivoice.attention import fuse_qkv_attention
 from sglang_omni.models.omnivoice.hf_config import OmniVoiceConfig
 from sglang_omni.models.omnivoice.mlp import fuse_gate_up_mlp
+
+
+@dataclass(kw_only=True)
+class FixedInputs:
+    """当前批次、当前分段内复用的输入准备结果，不保存到模型实例。"""
+
+    text_embeddings: torch.Tensor
+    audio_code_mask: torch.Tensor
+    audio_embedding_mask: torch.Tensor
+    position_ids: torch.Tensor
 
 
 class OmniVoiceModel(PreTrainedModel):
@@ -68,10 +80,24 @@ class OmniVoiceModel(PreTrainedModel):
         # tip self.llm 初始化的时候赋值 Qwen3TTS 模型， embed_tokens 是这个字段的固定属性
         return self.llm.embed_tokens
 
+    def prepare_fixed_inputs(
+        self, input_ids: torch.Tensor, audio_mask: torch.Tensor
+    ) -> FixedInputs:
+        """在迭代前计算文本向量、掩码视图与位置编号；更换批次或分段时重新准备。"""
+        # 音频位置也会查文本表，但后续由 torch.where 选用实时音频向量。
+        return FixedInputs(
+            text_embeddings=self.llm.embed_tokens(input_ids[:, 0, :]),
+            audio_code_mask=audio_mask.unsqueeze(1),
+            audio_embedding_mask=audio_mask.unsqueeze(-1),
+            position_ids=torch.arange(
+                input_ids.shape[-1], device=input_ids.device
+            ).unsqueeze(0),
+        )
+
     def forward(
         self,
         input_ids: torch.Tensor,  # [batch_size * 2, num_audio_codebook, max_seq_len]
-        audio_mask: torch.Tensor,  # [batch_size * 2, max_seq_len]
+        fixed_inputs: FixedInputs,
         attention_mask: torch.Tensor,  # [batch_size * 2, 1, max_seq_len, max_seq_len]
         *,
         target_position_indices: torch.Tensor, # [x] 一维的 tensor，元素值是目标音频对应的位置；另外之所以是一维是因为将 batch_size * 2 和每个batch中的 max_seq_length 打平了
@@ -82,32 +108,32 @@ class OmniVoiceModel(PreTrainedModel):
         返回 [num_audio_codebook, total_target_frames * 2, audio_vocab_size]。
         """
 
-        # NOTE 文本向量化
-        #  对文本进行向量化、注意之前文本是 8 层，但是这里只处理1层就行（虽然音频也一块搞了，但是不会使用
-        text_embeddings = self.llm.embed_tokens(input_ids[:, 0, :])
+        # 文本输入向量在各轮不变，复用循环外的准备结果；主干隐藏状态仍每轮重算。
 
         # NOTE 音频向量化
         # input_ids 形状是 [batch_size * 2, 8, max_len]
-        #   * audio_mask .unsqueeze(1)：将形状设置成 [batch_size * 2, 1, max_len]，然后和前边的 input_ids 通过 Broadcasting/广播 对齐，然后做逐元素相乘、将非音频部分设置成0
+        #   * fixed_inputs.audio_code_mask：形状为 [batch_size * 2, 1, max_len]，然后和前边的 input_ids 通过 Broadcasting/广播 对齐，再逐元素相乘、将非音频部分设置成0
         #   + self.codebook_layer....view(1,-1,1) 形状是 [1,8,1]，和前边的值做逐元素相加
         #       这 8 个元素和音频做逐元素相加是因为 audio code 在不同层含义不一样、这里每层都和 layer*vocab_size相加、获取码本在当前层的值
-        audio_ids = input_ids * audio_mask.unsqueeze(
-            1
-        ) + self.codebook_layer_offsets.view(1, -1, 1)
+        audio_ids = (
+            input_ids * fixed_inputs.audio_code_mask
+            + self.codebook_layer_offsets.view(1, -1, 1)
+        )
         audio_embeddings = self.audio_embeddings(audio_ids).sum(dim=1) # tip 对音频进行向量化，并且对应 seq 的向量进行合并
 
         # NOTE 组装输入 embedding
         embeddings = torch.where(
             # 条件
-            audio_mask.unsqueeze(-1),
+            fixed_inputs.audio_embedding_mask,
             audio_embeddings, # true 时选择 [batch_size * 2, all_seq_len, hidden_size]
-            text_embeddings # false 时选择 [batch_size * 2, all_seq_len, hidden_size]
+            fixed_inputs.text_embeddings # false 时选择 [batch_size * 2, all_seq_len, hidden_size]
         )
 
         # NOTE
         hidden_states = self.llm(
             inputs_embeds=embeddings, # tip [batch_size * 2, max_len, hidden_size]
             attention_mask=attention_mask, # tip [batch_size * 2, 1, max_len, max_len]，对于一个请求、所有参与推理的位置的mask都是true、pad位置不是
+            position_ids=fixed_inputs.position_ids,
             # tip bi-direction attention：比如 text 后边 target audio 的token、embedding会随着一轮又一轮的推理一直变化，所以 bi-direction attention 计算、
             #      前边的注意力计算结果也会变化，所以
             use_cache=False,
