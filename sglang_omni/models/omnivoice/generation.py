@@ -569,6 +569,9 @@ def sample_batch(
     ]
     layer_indices = torch.arange(num_audio_codebook, device=model.device).view(-1, 1)
 
+    # 每段只准备一次固定输入；目标音频编号和向量仍在每轮更新。
+    fixed_inputs = model.prepare_fixed_inputs(input_ids, audio_mask)
+
     # NOTE step 2
     #   进行 num_step 轮推理，逐步填充结果位置数据
     for step in range(options.num_step):
@@ -579,7 +582,7 @@ def sample_batch(
         # NOTE 注意，这里仅仅返回的是 目标音频区域的 logits 信息，形状是 [num_audio_codebook, total_target_frames * 2, audio_vocab_size]
         logits = model(
             input_ids,
-            audio_mask,
+            fixed_inputs,
             attention_mask,
             target_position_indices=target_position_indices,
         ).float()

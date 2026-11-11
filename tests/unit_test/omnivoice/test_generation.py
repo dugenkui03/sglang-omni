@@ -2,6 +2,8 @@
 """检验双向注意力、去掩码、随机隔离和长文本分段。"""
 
 from concurrent.futures import CancelledError
+from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -16,6 +18,7 @@ from sglang_omni.models.omnivoice.generation import (
     unmask_schedule,
 )
 from sglang_omni.models.omnivoice.hf_config import GenerationOptions
+from sglang_omni.models.omnivoice.model import FixedInputs
 from sglang_omni.models.omnivoice.payload_types import OmniVoiceState
 
 
@@ -171,9 +174,19 @@ def test_model_attention_is_bidirectional(model) -> None:
     audio = torch.zeros(1, 2, dtype=torch.bool)
     mask = torch.ones(1, 1, 2, 2, dtype=torch.bool)
     target_position_indices = torch.tensor([0])
-    first = model(ids, audio, mask, target_position_indices=target_position_indices)
+    first = model(
+        ids,
+        model.prepare_fixed_inputs(ids, audio),
+        mask,
+        target_position_indices=target_position_indices,
+    )
     ids[:, :, 1] = 15
-    second = model(ids, audio, mask, target_position_indices=target_position_indices)
+    second = model(
+        ids,
+        model.prepare_fixed_inputs(ids, audio),
+        mask,
+        target_position_indices=target_position_indices,
+    )
     assert not torch.allclose(first[:, 0], second[:, 0], atol=1e-7)
 
 
@@ -254,7 +267,7 @@ def test_target_projection_matches_full_projection(
 
     def full_projection_reference(
         input_ids: torch.Tensor,
-        audio_mask: torch.Tensor,
+        fixed_inputs: FixedInputs,
         attention_mask: torch.Tensor,
         *,
         target_position_indices: torch.Tensor,
@@ -264,7 +277,7 @@ def test_target_projection_matches_full_projection(
             input_ids.shape[0] * input_ids.shape[-1], device=input_ids.device
         )
         full_logits = target_forward(
-            input_ids, audio_mask, attention_mask, target_position_indices=all_positions
+            input_ids, fixed_inputs, attention_mask, target_position_indices=all_positions
         )
         return full_logits.index_select(1, target_position_indices)
 
@@ -280,6 +293,88 @@ def test_target_projection_matches_full_projection(
     )
     for actual_codes, expected_codes in zip(actual, expected, strict=True):
         torch.testing.assert_close(actual_codes, expected_codes, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("sampled", [False, True])
+@torch.inference_mode()
+def test_fixed_inputs_match_per_step_preparation(
+    model, tokenizer, monkeypatch, sampled: bool
+) -> None:
+    """跨轮复用须保持 logits、码本及随机状态，新文本批次不能复用旧向量。"""
+    options = {
+        "position_temperature": 0.7 if sampled else 0.0,
+        "class_temperature": 0.4 if sampled else 0.0,
+    }
+    forward = model.forward
+    actual_logits: list[torch.Tensor] = []
+    expected_logits: list[torch.Tensor] = []
+
+    def capture_logits(module, arguments, output: torch.Tensor) -> None:
+        """记录实际迭代结果，覆盖目标编号变化后的后续轮次。"""
+        actual_logits.append(output.clone())
+
+    def recompute_fixed_inputs(
+        input_ids: torch.Tensor,
+        fixed_inputs: FixedInputs,
+        attention_mask: torch.Tensor,
+        *,
+        target_position_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """恢复优化前每轮重新查文本表、生成位置编号的计算作为对照。"""
+        refreshed = replace(
+            fixed_inputs,
+            text_embeddings=model.llm.embed_tokens(input_ids[:, 0, :]),
+            position_ids=torch.arange(
+                input_ids.shape[-1], device=input_ids.device
+            ).unsqueeze(0),
+        )
+        output = forward(
+            input_ids,
+            refreshed,
+            attention_mask,
+            target_position_indices=target_position_indices,
+        )
+        expected_logits.append(output.clone())
+        return output
+
+    # 同一模型连续处理不同文本、不同长度的两批请求，每批仅查一次文本表。
+    for text in ("Hello.", "A different sentence."):
+        actual_items = [make_item("a", 2, **options), make_item("b", 5, **options)]
+        expected_items = [make_item("a", 2, **options), make_item("b", 5, **options)]
+        for item in actual_items + expected_items:
+            item.text = text
+        hook = model.register_forward_hook(capture_logits)
+        try:
+            with (
+                patch.object(
+                    model.llm.embed_tokens,
+                    "forward",
+                    wraps=model.llm.embed_tokens.forward,
+                ) as text_lookup,
+                patch.object(
+                    model.audio_embeddings,
+                    "forward",
+                    wraps=model.audio_embeddings.forward,
+                ) as audio_lookup,
+            ):
+                actual = sample_batch(actual_items, model, tokenizer, lambda _: False)
+            assert text_lookup.call_count == 1
+            assert audio_lookup.call_count == actual_items[0].state.generation.num_step
+        finally:
+            hook.remove()
+        with monkeypatch.context() as context:
+            context.setattr(model, "forward", recompute_fixed_inputs)
+            expected = sample_batch(expected_items, model, tokenizer, lambda _: False)
+        for actual_codes, expected_codes, actual_item, expected_item in zip(
+            actual, expected, actual_items, expected_items, strict=True
+        ):
+            torch.testing.assert_close(actual_codes, expected_codes, rtol=0, atol=0)
+            assert torch.equal(
+                actual_item.generator.get_state(), expected_item.generator.get_state()
+            )
+    assert len(actual_logits) == 2 * actual_items[0].state.generation.num_step
+    for actual, expected in zip(actual_logits, expected_logits, strict=True):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
 def test_cancellation_returns_error_not_partial_audio(model, tokenizer) -> None:
