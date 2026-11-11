@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""加载权重后就地合并 Gate/Up 投影，仅用于推理。"""
+"""合并 Gate/Up 投影，并在 CUDA 上融合 SiLU 与逐元素乘法，仅用于推理。"""
 
 from types import MethodType
 
@@ -8,15 +8,18 @@ import torch.nn.functional as F
 from torch import nn
 from transformers.models.qwen3.modeling_qwen3 import Qwen3MLP
 
+if torch.version.cuda is not None:
+    from flashinfer.activation import silu_and_mul
+
 
 def fuse_gate_up_mlp(mlp: Qwen3MLP) -> None:
     """
-       Qwen3MLP 的 mlp 实现： down_proj = self.down_proj(
-                                                            self.act_fn(           # 激活函数
-                                                                self.gate_proj(x) # gate
-                                                            )
-                                                            * self.up_proj(x)。  # up
-                                                      )
+    Qwen3MLP 的 mlp 实现： down_proj = self.down_proj(
+                                                         self.act_fn(           # 激活函数
+                                                             self.gate_proj(x) # gate
+                                                         )
+                                                         * self.up_proj(x)。  # up
+                                                   )
 
     """
     if mlp.forward.__func__ is fused_gate_up_forward:
@@ -33,11 +36,19 @@ def fuse_gate_up_mlp(mlp: Qwen3MLP) -> None:
 
 
 def fused_gate_up_forward(self: Qwen3MLP, hidden_states: torch.Tensor) -> torch.Tensor:
-    """一次线性计算得到 Gate/Up，再执行原来的 SiLU、逐元素乘法和降维。"""
+    """CUDA FP16/BF16 使用融合 SiLU/Mul，其余设备、精度或激活保留原计算。"""
     # 输出最后一维是 2 * intermediate_size，前半是 Gate，后半是 Up。
     # NOTE F.linear 逻辑是
     #       gate_up_states = hidden_states @ self.gate_up_weight.T // 和后者的转置相乘
     gate_up_states = F.linear(hidden_states, self.gate_up_weight)
-    # 分开 gate 和 up
-    gate_states, up_states = gate_up_states.chunk(2, dim=-1)
-    return self.down_proj(self.act_fn(gate_states) * up_states)
+    if (
+        gate_up_states.is_cuda
+        and gate_up_states.dtype in (torch.float16, torch.bfloat16)
+        and self.config.hidden_act == "silu"
+    ):
+        # 一次 CUDA kernel 完成 SiLU(Gate) * Up，避免写回独立的激活中间结果。
+        activated_states = silu_and_mul(gate_up_states)
+    else:
+        gate_states, up_states = gate_up_states.chunk(2, dim=-1)
+        activated_states = self.act_fn(gate_states) * up_states
+    return self.down_proj(activated_states)
