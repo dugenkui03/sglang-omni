@@ -375,6 +375,7 @@ class DeclarativeStateBase(PipelineStateBase):
 
 
 def load_state(payload: StagePayload, state_cls: type[StateT]) -> StateT:
+    # 这是一个 generic 方法：从 payload.data 恢复一个 state_cls 类型的对象
     return state_cls.from_dict(payload.data)
 
 
