@@ -44,7 +44,7 @@
 
 #### 04. 归一化融合（Fused RMSNorm）
 
-- [ ] RMSNorm 独立融合已实现（2026-11-12，待 GPU 验收）：参考 O1 `_fi_rmsnorm_forward()`，`model.fuse_rmsnorm()` 在加载后就地替换主干、Q/K 及最终 RMSNorm 的 forward；CUDA FP16/BF16 且输入与权重精度一致时调用 FlashInfer `rmsnorm()`，保留原权重、eps 和形状；CPU、FP32 及混合精度权重使用原 Qwen3 计算。针对性回归 57 项通过，16 项 GPU 测试因本机无 GPU 跳过（含本次新增 12 项）；缺少 sglang/pre_commit，完整套件与全量钩子未通过验证，GPU 数值及性能待验证，未下载权重。V1 的残差加法与 RMSNorm 融合留作后续独立优化。
+- [ ] RMSNorm 独立融合已实现（2026-11-12，待 GPU 验收）：参考 O1 `_fi_rmsnorm_forward()`，`model.fuse_rmsnorm()` 在加载后就地替换主干、Q/K 及最终 RMSNorm 的 forward；CUDA FP16/BF16 且输入与权重精度一致时调用 FlashInfer `rmsnorm()`，保留原权重、eps 和形状；CPU、FP32 及混合精度权重使用原 Qwen3 计算。独立融合回归 57 项通过，16 项 GPU 测试因本机无 GPU 跳过；随后参考 V1 的 Attention 后 Add/Norm 组合，在 `decoder.py` 中接入 FlashInfer `fused_add_rmsnorm()`，原地更新本轮临时缓冲区，保留固定输入缓存，新增两层变长 CFG 批次、多轮更新及参数保留对照；本次回归 61 项通过、19 项 GPU 测试跳过。该项只融合 Attention 后的一组计算，MLP 后跨层残差融合另行设计；完整套件缺少 sglang、全量钩子缺少 pre_commit，GPU 数值及性能待验证，未下载权重。
 
 #### 05. 注意力前处理融合（QK Norm / RoPE / Layout Fusion）
 
