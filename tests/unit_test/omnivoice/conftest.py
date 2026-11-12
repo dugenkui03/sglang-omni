@@ -55,4 +55,5 @@ def model() -> OmniVoiceModel:
         model.fuse_qkv_projections()
         model.fuse_gate_up_projections()
         model.fuse_rmsnorm()
+        model.fuse_residual_add_rmsnorm()
         return model
