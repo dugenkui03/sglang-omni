@@ -25,7 +25,7 @@ CPU 数值验证需给三个 GPU Stage 显式设置 `--audio_encoder.factory.dev
 
 ## 请求
 
-生成 Stage 在加载权重后自动调用 `model.fuse_qkv_projections()` 和 `model.fuse_gate_up_projections()`，分别合并每层的 Q/K/V 与 MLP Gate/Up 投影；参考编码和 Codec 不变。直接使用 `OmniVoiceModel.from_pretrained()` 时，可在加载后调用这两个方法启用优化。Gate/Up 合并后仍使用原来的 SiLU、逐元素乘法及 down_proj，不引入激活融合内核。融合后的实例仅用于推理，不提供官方格式的保存／重载转换；如需保存官方格式，应在融合前保存。当前 Gate/Up 实现仅做静态检查，真实权重及 GPU 验证待评审后进行。
+生成 Stage 在加载权重后自动调用 `model.fuse_qkv_projections()` 和 `model.fuse_gate_up_projections()`，分别合并每层的 Q/K/V 与 MLP Gate/Up 投影；参考编码和 Codec 不变。直接使用 `OmniVoiceModel.from_pretrained()` 时，可在加载后调用这两个方法启用优化。Gate/Up 合并后，CUDA FP16/BF16 的 SiLU 使用项目已固定版本的 FlashInfer `silu_and_mul()`，将激活与逐元素乘法合到一次 CUDA kernel，再执行原 down_proj；CPU、FP32 及非 SiLU 激活保留原计算。CUDA 环境缺少 FlashInfer 或内核执行失败时直接报错，不静默降级。融合后的实例仅用于推理，不提供官方格式的保存／重载转换；如需保存官方格式，应在融合前保存。此项 GPU 数值及性能尚未实测。
 
 生成循环通过 `model.prepare_fixed_inputs(input_ids, audio_mask)` 为当前批次、当前分段准备一次文本向量、掩码视图和位置编号，再传给 `model(input_ids, fixed_inputs, attention_mask, target_position_indices=...)` 逐轮使用。直接调用模型也需先准备；更换文本、批次、分段、设备或精度时重新准备。该结果只保留在调用方局部变量中，不跨请求缓存；文本向量包含的音频位置由实时音频向量覆盖。RoPE cos/sin、音频向量、主干隐藏状态及 Q/K/V 仍每轮计算。此项 GPU 时延与峰值 GPU 显存收益尚未实测。
 
@@ -61,6 +61,7 @@ CPU 数值验证需给三个 GPU Stage 显式设置 `--audio_encoder.factory.dev
 
 ```bash
 python -m pytest tests/unit_test/omnivoice tests/unit_test/benchmarks/test_tts_seedtts.py -q
+python -m pytest tests/unit_test/omnivoice/test_mlp.py -m accelerator -q
 python -m benchmarks.eval.benchmark_tts_seedtts --model k2-fsa/OmniVoice \
   --lang en --max-samples 32 --output-dir results/omnivoice_en_smoke
 python -m benchmarks.eval.benchmark_tts_seedtts --model k2-fsa/OmniVoice \

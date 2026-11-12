@@ -40,7 +40,7 @@
 
 #### 03. 合并 MLP 投影及激活（Fused Gate/Up、SwiGLU）
 
-- [ ] Gate/Up 投影合并代码已实现（2026-11-03，待验收）：参考 O1 `_patch_mlp()`、V1 `OmniVoiceMLP`，加载后调用 `fuse_gate_up_projections()`，在 `mlp.py` 中拼接权重、一次 F.linear、chunk 拆分；保留原 SiLU、逐元素乘法及 down_proj。新增微型对照测试但未运行，仅做静态检查，未下载权重。SiLU／乘法的内核融合仍待后续单独实现。
+- [ ] Gate/Up 投影及 SiLU/Mul 融合代码已实现，待 GPU 验收：参考 O1 `_patch_mlp()`、V1 `OmniVoiceMLP`，加载后调用 `fuse_gate_up_projections()`，在 `mlp.py` 中拼接权重并执行一次 F.linear；CUDA FP16/BF16 的 SiLU 使用 FlashInfer `silu_and_mul()`，一次内核完成激活与逐元素乘法，再调用原 down_proj。CPU、FP32 及非 SiLU 激活保留原计算，不捕获融合内核错误或静默切换。2026-11-11：MLP、Attention 及生成回归 47 项通过，4 项真实 CUDA 对照因本机无 GPU 跳过；全套回归缺少 sglang、全量钩子缺少 pre_commit，GPU 数值、真实权重及性能仍待验证，未下载权重。
 
 #### 04. 归一化融合（Fused RMSNorm）
 
