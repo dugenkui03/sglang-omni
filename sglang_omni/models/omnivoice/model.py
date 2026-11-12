@@ -7,10 +7,12 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 from transformers import PreTrainedModel, Qwen3Model
+from transformers.models.qwen3.modeling_qwen3 import Qwen3RMSNorm
 
 from sglang_omni.models.omnivoice.attention import fuse_qkv_attention
 from sglang_omni.models.omnivoice.hf_config import OmniVoiceConfig
 from sglang_omni.models.omnivoice.mlp import fuse_gate_up_mlp
+from sglang_omni.models.omnivoice.norm import fuse_rmsnorm
 
 
 @dataclass(kw_only=True)
@@ -77,6 +79,14 @@ class OmniVoiceModel(PreTrainedModel):
         """权重加载完成后，就地合并每个 Transformer 层的 Gate/Up 投影。"""
         for layer in self.llm.layers:
             fuse_gate_up_mlp(layer.mlp)
+
+    def fuse_rmsnorm(self) -> None:
+        """覆盖主干、Q/K 及最终 RMSNorm，保留每个模块的权重和 eps。
+           NOTE 构建stage实现的时候调用了
+        """
+        for module in self.llm.modules(): # 递归遍历模型自身及其所有子模块中的 nn.Module 实现
+            if isinstance(module, Qwen3RMSNorm):
+                fuse_rmsnorm(module)
 
     def get_input_embeddings(self) -> nn.Embedding:
         # tip self.llm 初始化的时候赋值 Qwen3TTS 模型， embed_tokens 是这个字段的固定属性

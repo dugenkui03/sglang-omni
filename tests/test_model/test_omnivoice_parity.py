@@ -70,6 +70,7 @@ def models():
         )
         native.fuse_qkv_projections()
         native.fuse_gate_up_projections()
+        native.fuse_rmsnorm()
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
         codec = load_codec(checkpoint, device)
         yield upstream, native, tokenizer, codec, reference, reference_text

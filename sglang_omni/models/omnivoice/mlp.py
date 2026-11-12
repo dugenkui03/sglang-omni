@@ -42,9 +42,9 @@ def fused_gate_up_forward(self: Qwen3MLP, hidden_states: torch.Tensor) -> torch.
     #       gate_up_states = hidden_states @ self.gate_up_weight.T // 和后者的转置相乘
     gate_up_states = F.linear(hidden_states, self.gate_up_weight)
     if (
-        gate_up_states.is_cuda
-        and gate_up_states.dtype in (torch.float16, torch.bfloat16)
-        and self.config.hidden_act == "silu"
+        gate_up_states.is_cuda # 如果是 gpu 计算
+        and gate_up_states.dtype in (torch.float16, torch.bfloat16) # 如果 gate_up 精度是 float16
+        and self.config.hidden_act == "silu" # 如果激活函数是 silu
     ):
         # 一次 CUDA kernel 完成 SiLU(Gate) * Up，避免写回独立的激活中间结果。
         activated_states = silu_and_mul(gate_up_states)
