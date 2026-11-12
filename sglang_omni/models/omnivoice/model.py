@@ -81,8 +81,10 @@ class OmniVoiceModel(PreTrainedModel):
             fuse_gate_up_mlp(layer.mlp)
 
     def fuse_rmsnorm(self) -> None:
-        """覆盖主干、Q/K 及最终 RMSNorm，保留每个模块的权重和 eps。"""
-        for module in self.llm.modules():
+        """覆盖主干、Q/K 及最终 RMSNorm，保留每个模块的权重和 eps。
+           NOTE 构建stage实现的时候调用了
+        """
+        for module in self.llm.modules(): # 递归遍历模型自身及其所有子模块中的 nn.Module 实现
             if isinstance(module, Qwen3RMSNorm):
                 fuse_rmsnorm(module)
 
