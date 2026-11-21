@@ -50,6 +50,19 @@ SEEDTTS_SAMPLE = SampleInput(
 )
 
 
+@pytest.mark.parametrize("model", ["k2-fsa/OmniVoice", "k2-fsa/OmniVoice@revision", "/models/OmniVoice"])
+def test_omnivoice_profile_omits_autoregressive_options(monkeypatch, model):
+    """非自回归模型不接收 max_new_tokens 或 SGLang engine 参数。"""
+    monkeypatch.setattr(sys, "argv", ["benchmark", "--model", model])
+    args, profile = tts._parse_args(tts._build_arg_parser())
+    config = tts._config_from_args(args)
+    assert not profile.forward_sglang_engine
+    assert tts.resolve_max_new_tokens(config) is None
+    assert "max_new_tokens" not in tts._build_generation_kwargs(config)
+    assert config.concurrency == config.warmup == 1
+    assert config.seed == 1234
+
+
 @pytest.mark.parametrize(
     "model, is_auk",
     [

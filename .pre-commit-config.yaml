@@ -25,6 +25,8 @@ repos:
       - id: check-toml
       - id: check-ast
       - id: check-added-large-files
+        # CUDA 文章的截图及内嵌图片的独立 HTML 作为文档资源保留。
+        exclude: '^(CUDA编程模型_中文译文\.html|docs/assets/cuda-programming-model/.*\.png)$'
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
         exclude: (?:^\.claude/skills/|^sglang_omni_router/tests/.*\.rs$|^Voxt/(?!backend/|Config/OmniDev\.xcconfig$|Voxt/VoxtOmniDev\.entitlements$|Voxt/Transcription/Omni))
