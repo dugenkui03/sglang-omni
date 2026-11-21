@@ -72,7 +72,7 @@ def fused_attention_forward(
     query_states, key_states, value_states = qkv.split(self.qkv_sizes, dim=-1)
 
     # hidden_states.shape[:-1] 是指去掉最后一个维度的形状 tuple
-    # 比如 hidden_states.shape 是 [batch_size, token_sequence, x] 这里获取的是 [batch_size, token_sequence]
+    # 比如 hidden_states.shape 是 [batch_size * 2, max_sequence_length, x] 这里获取的是 [batch_size * 2, max_sequence_length]
     input_shape = hidden_states.shape[:-1]
 
     # *input_shape 会把这个 tuple 自动展开为 batch_size, token_sequence
@@ -125,8 +125,9 @@ def fused_attention_forward(
         sliding_window=self.sliding_window,
         **kwargs,
     )
-    # 注意力计算结果转换形状
-    # [batch_size × 2, max_sequence_length, head_num, head_dim] -> [batch_size, max_sequence_length, head_num * head_dim]
+    # note 注意力计算结果转换形状
+    #   [batch_size × 2, max_sequence_length, head_num, head_dim]
+    #       -> [batch_size × 2, max_sequence_length, head_num * head_dim]
     attn_output = attn_output.reshape(*input_shape, -1).contiguous()
     # 对注意力转换接过进行投影
     return self.o_proj(attn_output), attn_weights
