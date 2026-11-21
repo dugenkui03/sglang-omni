@@ -212,7 +212,7 @@ def test_target_projection_matches_full_projection(
 
     def capture_hidden_states(module, arguments, output) -> None:
         """保留当前轮的真实主干输出，供完整投影基准使用。"""
-        backbone_outputs[:] = [output.last_hidden_state]
+        backbone_outputs[:] = [output]
 
     def capture_projection_rows(module, arguments) -> None:
         """观测真实线性层输入，防止实现退化为全量投影后裁剪。"""
@@ -250,7 +250,7 @@ def test_target_projection_matches_full_projection(
         )
 
     hooks = [
-        model.llm.register_forward_hook(capture_hidden_states),
+        model.llm.norm.register_forward_hook(capture_hidden_states),
         model.audio_heads.register_forward_pre_hook(capture_projection_rows),
         model.register_forward_hook(compare_target_logits),
     ]
@@ -300,7 +300,7 @@ def test_target_projection_matches_full_projection(
 def test_fixed_inputs_match_per_step_preparation(
     model, tokenizer, monkeypatch, sampled: bool
 ) -> None:
-    """跨轮复用须保持 logits、码本及随机状态，新文本批次不能复用旧向量。"""
+    """文本和 RoPE 跨轮复用须匹配原主干的逐轮 logits、码本及随机状态。"""
     options = {
         "position_temperature": 0.7 if sampled else 0.0,
         "class_temperature": 0.4 if sampled else 0.0,
@@ -312,6 +312,20 @@ def test_fixed_inputs_match_per_step_preparation(
     def capture_logits(module, arguments, output: torch.Tensor) -> None:
         """记录实际迭代结果，覆盖目标编号变化后的后续轮次。"""
         actual_logits.append(output.clone())
+
+    def original_backbone(
+        hidden_states: torch.Tensor,
+        attention_mask: torch.Tensor,
+        fixed_inputs: FixedInputs,
+    ) -> torch.Tensor:
+        """用 Transformers 原入口独立计算每轮的 RoPE。"""
+        return model.llm(
+            inputs_embeds=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=fixed_inputs.position_ids,
+            use_cache=False,
+            return_dict=True,
+        ).last_hidden_state
 
     def recompute_fixed_inputs(
         input_ids: torch.Tensor,
@@ -356,14 +370,21 @@ def test_fixed_inputs_match_per_step_preparation(
                     "forward",
                     wraps=model.audio_embeddings.forward,
                 ) as audio_lookup,
+                patch.object(
+                    model.llm.rotary_emb,
+                    "forward",
+                    wraps=model.llm.rotary_emb.forward,
+                ) as rotary_embedding,
             ):
                 actual = sample_batch(actual_items, model, tokenizer, lambda _: False)
             assert text_lookup.call_count == 1
+            assert rotary_embedding.call_count == 1
             assert audio_lookup.call_count == actual_items[0].state.generation.num_step
         finally:
             hook.remove()
         with monkeypatch.context() as context:
             context.setattr(model, "forward", recompute_fixed_inputs)
+            context.setattr(model, "forward_backbone", original_backbone)
             expected = sample_batch(expected_items, model, tokenizer, lambda _: False)
         for actual_codes, expected_codes, actual_item, expected_item in zip(
             actual, expected, actual_items, expected_items, strict=True

@@ -29,6 +29,8 @@ class FixedInputs:
     audio_embedding_mask: torch.Tensor
     # 形状是 [1, full_length]，内容是 [[0 ... full_length-1]]
     position_ids: torch.Tensor
+    # RoPE 的 cos/sin 均为 [1, full_length, head_dim]，供各层和各轮复用。
+    position_embeddings: tuple[torch.Tensor, torch.Tensor]
 
 
 class OmniVoiceModel(PreTrainedModel):
@@ -104,23 +106,42 @@ class OmniVoiceModel(PreTrainedModel):
         audio_mask: torch.Tensor # shape 是 [batch_size * 2, full_length]，标识对应位置是文本还是音频
     ) -> FixedInputs:
         """
-           note 在当前分段迭代前准备文本向量、mask 视图和位置编号，供各轮复用
+           note 在当前分段迭代前准备文本向量、mask 视图、位置编号和 RoPE cos/sin，供各轮复用
         """
 
+        # 对第 0 个码本通道查文本向量表，仅使用文本位置的结果。
+        text_embeddings = self.llm.embed_tokens(input_ids[:, 0, :])
+        position_ids = torch.arange(
+            input_ids.shape[-1], device=input_ids.device
+        ).unsqueeze(0)
         return FixedInputs(
-            # note 这里是对第 0 个码本通道的所有位置查文本向量表，仅使用文本位置的结果
-            text_embeddings=self.llm.embed_tokens(input_ids[:, 0, :]),
+            text_embeddings=text_embeddings,
             # tip unsqueeze 表示在下标为1的位置插入一个维度，比如 [a, b] 变成 [a, 1, b]
             #   目的是方便后续广播、计算
             audio_code_mask=audio_mask.unsqueeze(1),
             # unsqueeze(-1) 标识在最后一个位置增加一个维度，比如 [a, b, ....x] 变成 [a, b, ...x, 1]
             audio_embedding_mask=audio_mask.unsqueeze(-1),
-            # 生成 [0 ... full_length-1] 的一维 tensor，然后将 shape 改成 [1, full_length]
-            position_ids=torch.arange(
-                input_ids.shape[-1], # full_length
-                device=input_ids.device
-            ).unsqueeze(0),
+            position_ids=position_ids,
+            position_embeddings=self.llm.rotary_emb(text_embeddings, position_ids),
         )
+
+    def forward_backbone(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: torch.Tensor,
+        fixed_inputs: FixedInputs,
+    ) -> torch.Tensor:
+        """使用组批时准备的四维双向掩码和预计算的 RoPE 运行 Qwen3 主干。"""
+        # 组批已构建 [batch_size * 2, 1, max_len, max_len] 双向掩码，可直接传入各层。
+        for layer in self.llm.layers[: self.llm.config.num_hidden_layers]:
+            hidden_states = layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=fixed_inputs.position_ids,
+                position_embeddings=fixed_inputs.position_embeddings,
+                use_cache=False,
+            )
+        return self.llm.norm(hidden_states)
 
     def forward(
         self,
@@ -165,19 +186,8 @@ class OmniVoiceModel(PreTrainedModel):
         )
 
         # 启用残差融合时只写入这份独立的临时张量，不与 fixed_inputs 共享存储。
-        # NOTE
-        hidden_states = self.llm(
-            # tip [batch_size * 2, max_len, hidden_size]
-            inputs_embeds=embeddings,
-            # tip [batch_size * 2, 1, max_len, max_len]，对于一个请求、所有参与推理的位置的mask都是true、pad位置不是
-            attention_mask=attention_mask,
-            # [0, 1, 2, .... full_length-1] 这个token在输入序列中的位置
-            position_ids=fixed_inputs.position_ids,
-            # tip bi-direction attention：比如 text 后边 target audio 的token、embedding会随着一轮又一轮的推理一直变化，所以 bi-direction attention 计算、
-            #      前边的注意力计算结果也会变化，所以
-            use_cache=False,
-            return_dict=True,
-        ).last_hidden_state # NOTE 【重要】对于 transformer layer/ transformer 主干，输入形状和输出形状不变
+        # 双向注意力的隐藏状态随音频 token 更新，每轮重新计算。
+        hidden_states = self.forward_backbone(embeddings, attention_mask, fixed_inputs)
 
         # note
         #  获取结果音频位置的 [x, hidden_size] 数据，后边进行 audio_heads(lm_head)计算的时候仅仅计算这些位置
