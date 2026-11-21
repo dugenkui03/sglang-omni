@@ -12,13 +12,18 @@ from transformers.utils.generic import TransformersKwargs
 
 if torch.version.cuda is not None:
     from flashinfer.norm import fused_add_rmsnorm
+else:
+    fused_add_rmsnorm = None
 
 
 def fuse_residual_add_rmsnorm(layer: Qwen3DecoderLayer) -> None:
     """保留原 DecoderLayer 和参数，就地绑定推理用的 forward。"""
-    if layer.forward.__func__ is fused_decoder_forward:
-        return
-    layer.forward = MethodType(fused_decoder_forward, layer)
+    forward = layer.forward
+    layer.forward = (
+        forward
+        if forward.__func__ is fused_decoder_forward
+        else MethodType(fused_decoder_forward, layer)
+    )
 
 
 def fused_decoder_forward(
@@ -47,7 +52,7 @@ def fused_decoder_forward(
         **kwargs,
     )
     if (
-        torch.version.cuda is not None
+        fused_add_rmsnorm is not None
         and hidden_states.is_cuda
         and hidden_states.dtype in (torch.float16, torch.bfloat16)
         and residual.dtype == hidden_states.dtype
