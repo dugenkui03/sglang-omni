@@ -117,7 +117,9 @@ def test_cfg_matches_log_probability_reference(
     if class_temperature > 0:
         # 31 个候选保留向上取整后的 4 个，按排名屏蔽以独立核对 top-k 截断。
         candidate_indices = expected.argsort(dim=-1, descending=True)
-        filtered = expected.clone().scatter(-1, candidate_indices[..., 4:], -float("inf"))
+        filtered = expected.clone().scatter(
+            -1, candidate_indices[..., 4:], -float("inf")
+        )
         uniform_noise = torch.rand(
             expected.shape, dtype=expected.dtype, generator=reference_generator
         )
@@ -277,7 +279,10 @@ def test_target_projection_matches_full_projection(
             input_ids.shape[0] * input_ids.shape[-1], device=input_ids.device
         )
         full_logits = target_forward(
-            input_ids, fixed_inputs, attention_mask, target_position_indices=all_positions
+            input_ids,
+            fixed_inputs,
+            attention_mask,
+            target_position_indices=all_positions,
         )
         return full_logits.index_select(1, target_position_indices)
 
