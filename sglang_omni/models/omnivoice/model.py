@@ -10,6 +10,7 @@ from transformers import PreTrainedModel, Qwen3Model
 from transformers.models.qwen3.modeling_qwen3 import Qwen3RMSNorm
 
 from sglang_omni.models.omnivoice.attention import fuse_qkv_attention
+from sglang_omni.models.omnivoice.decoder import fuse_residual_add_rmsnorm
 from sglang_omni.models.omnivoice.hf_config import OmniVoiceConfig
 from sglang_omni.models.omnivoice.mlp import fuse_gate_up_mlp
 from sglang_omni.models.omnivoice.norm import fuse_rmsnorm
@@ -88,6 +89,11 @@ class OmniVoiceModel(PreTrainedModel):
             if isinstance(module, Qwen3RMSNorm):
                 fuse_rmsnorm(module)
 
+    def fuse_residual_add_rmsnorm(self) -> None:
+        """逐层融合 Attention 后的残差相加与 RMSNorm，仅用于内部推理。"""
+        for layer in self.llm.layers:
+            fuse_residual_add_rmsnorm(layer)
+
     def get_input_embeddings(self) -> nn.Embedding:
         # tip self.llm 初始化的时候赋值 Qwen3TTS 模型， embed_tokens 是这个字段的固定属性
         return self.llm.embed_tokens
@@ -158,6 +164,7 @@ class OmniVoiceModel(PreTrainedModel):
             fixed_inputs.text_embeddings
         )
 
+        # 启用残差融合时只写入这份独立的临时张量，不与 fixed_inputs 共享存储。
         # NOTE
         hidden_states = self.llm(
             # tip [batch_size * 2, max_len, hidden_size]

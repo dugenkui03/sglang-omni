@@ -366,6 +366,7 @@ def create_tts_engine_executor(
     model.fuse_qkv_projections()
     model.fuse_gate_up_projections()
     model.fuse_rmsnorm() # note
+    model.fuse_residual_add_rmsnorm()
     # tip: text - tokenizer -> text token_id
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
     return scheduler(

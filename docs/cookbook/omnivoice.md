@@ -29,6 +29,8 @@ CPU 数值验证需给三个 GPU Stage 显式设置 `--audio_encoder.factory.dev
 
 随后自动调用 `model.fuse_rmsnorm()`，就地启用主干、Q/K 和最终输出的 RMSNorm 融合。CUDA FP16/BF16 且输入与权重精度一致时，`norm.py` 将前置维展平成行、必要时转换为连续布局，再调用 FlashInfer `rmsnorm()` 并恢复原形状；原权重及 eps 保持不变。CPU、FP32 和混合精度权重沿用原 Qwen3 计算；内核错误直接抛出。本次只融合 RMSNorm 内部计算，残差加法仍由原主干执行。直接使用模型时可在加载后调用此方法；GPU 数值和性能待实测。
 
+再调用 `model.fuse_residual_add_rmsnorm()`，在 `decoder.py` 中融合各层 Attention 后的残差相加与 post-attention RMSNorm，使用 FlashInfer `fused_add_rmsnorm()`。它原地更新两个缓冲区：Attention 输出变为归一化结果，临时 hidden_states 变为相加结果。模型每轮由 `torch.where` 创建独立的 Embedding，固定输入缓存保持只读；启用后的 DecoderLayer 仅供模型内部推理，直接调用该层时需允许输入被修改。CUDA FP16/BF16 且残差、输出和归一化权重精度一致时启用，其他情况保留原来的分步运算，不捕获内核错误。MLP 后的残差相加及层间 Tensor 返回协议不变；GPU 数值及性能待实测。
+
 生成循环通过 `model.prepare_fixed_inputs(input_ids, audio_mask)` 为当前批次、当前分段准备一次文本向量、掩码视图和位置编号，再传给 `model(input_ids, fixed_inputs, attention_mask, target_position_indices=...)` 逐轮使用。直接调用模型也需先准备；更换文本、批次、分段、设备或精度时重新准备。该结果只保留在调用方局部变量中，不跨请求缓存；文本向量包含的音频位置由实时音频向量覆盖。RoPE cos/sin、音频向量、主干隐藏状态及 Q/K/V 仍每轮计算。此项 GPU 时延与峰值 GPU 显存收益尚未实测。
 
 复用 `POST /v1/audio/speech`，参考音频支持受现有媒体权限限制的路径、URL 和 data URL。本地路径需配置 `--allowed-local-media-path`。
@@ -65,6 +67,7 @@ CPU 数值验证需给三个 GPU Stage 显式设置 `--audio_encoder.factory.dev
 python -m pytest tests/unit_test/omnivoice tests/unit_test/benchmarks/test_tts_seedtts.py -q
 python -m pytest tests/unit_test/omnivoice/test_mlp.py -m accelerator -q
 python -m pytest tests/unit_test/omnivoice/test_norm.py -m accelerator -q
+python -m pytest tests/unit_test/omnivoice/test_decoder.py -m accelerator -q
 python -m benchmarks.eval.benchmark_tts_seedtts --model k2-fsa/OmniVoice \
   --lang en --max-samples 32 --output-dir results/omnivoice_en_smoke
 python -m benchmarks.eval.benchmark_tts_seedtts --model k2-fsa/OmniVoice \
