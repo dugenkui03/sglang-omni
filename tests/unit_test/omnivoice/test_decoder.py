@@ -86,7 +86,7 @@ def test_residual_fusion_matches_model_across_steps(
     input_ids, audio_mask, attention_mask = pack_batch(inputs, [2, 1], 8)
     target_indices = torch.tensor([3, 4, 8, 10, 11, 15], device=device)
     fixed_inputs = reference.prepare_fixed_inputs(input_ids, audio_mask)
-    snapshots = {name: tensor.clone() for name, tensor in vars(fixed_inputs).items()}
+    snapshots = deepcopy(vars(fixed_inputs))
     kernel_context = (
         patch.object(
             decoder_module,
@@ -122,7 +122,6 @@ def test_residual_fusion_matches_model_across_steps(
             )
             torch.testing.assert_close(actual, expected, rtol=tolerance, atol=tolerance)
             torch.testing.assert_close(input_ids, original_ids, rtol=0, atol=0)
-            for name, tensor in vars(fixed_inputs).items():
-                torch.testing.assert_close(tensor, snapshots[name], rtol=0, atol=0)
+            torch.testing.assert_close(vars(fixed_inputs), snapshots, rtol=0, atol=0)
         if device == "cuda":
             assert kernel.call_count == (4 if dtype != torch.float32 else 0)

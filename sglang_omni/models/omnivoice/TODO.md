@@ -64,7 +64,7 @@
 
 #### 09. 固定输入准备复用
 
-- [ ] 部分实现（2026-11-03，31 项微型 CPU 算法测试通过，GPU 待验收）：参考 V1 `forward()` 循环外的 `text_embeds_cached`、`audio_mask_3d`，本项目 `prepare_fixed_inputs()` 在每批、每段迭代前准备文本向量、音频掩码视图和位置编号，所有轮次复用；不保存到模型实例，也不跨请求缓存。音频向量、主干隐藏状态及 Q/K/V 仍每轮计算。RoPE 的 cos/sin 复用仍待单独实现：当前 Transformers 主干入口内部生成它们，后续参考 V1 `_ensure_rope()`、`_rope_table_for()`；CUDA 图路径另行处理。
+- [ ] 已实现，待 GPU 验收。参考 V1 的固定输入和 RoPE 表复用，`prepare_fixed_inputs()` 在每批、每段迭代前准备文本向量、音频掩码视图、位置编号和 RoPE cos/sin。主干各层在每轮使用组批生成的双向掩码和预计算的 cos/sin。CPU 对照确认每批只生成一次 cos/sin，逐轮 logits、最终码本和随机状态与原 Transformers 主干一致。CUDA Graph 路径在对应优化中评估。
 
 #### 10. CUDA 图（CUDA Graph）
 
