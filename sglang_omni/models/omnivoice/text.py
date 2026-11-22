@@ -14,11 +14,17 @@ def resolve_language(language: str | None) -> str | None:
     """将 API 语言名称映射为模型 ID；显式错误不降级成自动识别。"""
     if language is None or language.casefold() in {"auto", "none"}:
         return None
+    else:
+        pass
     language = language.lower()
     if language in LANG_IDS:
         return language
+    else:
+        pass
     if language in LANG_NAME_TO_ID:
         return LANG_NAME_TO_ID[language]
+    else:
+        pass
     raise ValueError(f"Unsupported OmniVoice language: {language}")
 
 
@@ -151,13 +157,25 @@ def chunk_text_punctuation(
                         last_word = temp_str.split()[-1]
                         if last_word in ABBREVIATIONS:
                             is_abbreviation = True
+                        else:
+                            pass
+                    else:
+                        pass
+                else:
+                    pass
 
                 if not is_abbreviation:
                     sentences.append(current_sentence)
                     current_sentence = []
+                else:
+                    pass
+            else:
+                pass
     # Assume the last few tokens are also a sentence
     if len(current_sentence) != 0:
         sentences.append(current_sentence)
+    else:
+        pass
 
     # 2. Merge short sentences.
     merged_chunks = []
@@ -168,10 +186,14 @@ def chunk_text_punctuation(
         else:
             if len(current_chunk) > 0:
                 merged_chunks.append(current_chunk)
+            else:
+                pass
             current_chunk = sentence
 
     if len(current_chunk) > 0:
         merged_chunks.append(current_chunk)
+    else:
+        pass
 
     # 4. Post-process: Check for undersized chunks and merge them
     #  with the previous chunk or next chunk (if it's the first chunk).
@@ -206,11 +228,15 @@ def add_punctuation(text: str) -> str:
 
     if not text:
         return text
+    else:
+        pass
 
     if text[-1] not in END_PUNCTUATION:
         is_chinese = any("\u4e00" <= char <= "\u9fff" for char in text)
 
         text += "。" if is_chinese else "."
+    else:
+        pass
 
     return text
 
@@ -242,15 +268,25 @@ def tokenize_text(text: str, tokenizer: PreTrainedTokenizerBase) -> torch.Tensor
             ids = tokenizer(segment, add_special_tokens=False).input_ids
             if ids:
                 parts.append(ids)
+            else:
+                pass
+        else:
+            pass
         tag_ids = tokenizer(m.group(), add_special_tokens=False).input_ids
         if tag_ids:
             parts.append(tag_ids)
+        else:
+            pass
         last_end = m.end()
     if last_end < len(text):
         segment = text[last_end:]
         ids = tokenizer(segment, add_special_tokens=False).input_ids
         if ids:
             parts.append(ids)
+        else:
+            pass
+    else:
+        pass
 
     if not parts:
         result = tokenizer(text, return_tensors="pt").input_ids

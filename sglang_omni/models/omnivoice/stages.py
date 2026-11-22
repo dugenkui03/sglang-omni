@@ -42,10 +42,10 @@ logger = logging.getLogger(__name__)
 def scheduler(
     # 参数是可调用类型
     compute: Callable[
-        [list[StagePayload], CancellationCheck], # 输入
-        list[StagePayload | Exception] # 输出
+        [list[StagePayload], CancellationCheck],  # 输入
+        list[StagePayload | Exception],  # 输出
     ],
-    #tip
+    # tip
     # device = torch.device("cpu")     # CPU
     # device = torch.device("cuda:0")  # 第 0 张 GPU
     device: torch.device,
@@ -57,11 +57,13 @@ def scheduler(
         raise ValueError(
             "OmniVoice requires positive max_batch_size and nonnegative max_batch_wait_ms"
         )
+    else:
+        pass
 
     @torch.inference_mode()
     def run(payloads: list[StagePayload]) -> list[StagePayload | Exception]:
         """在调度线程中执行推理，不继承创建线程的 CUDA 当前设备。
-           NOTE 批处理
+        NOTE 批处理
         """
         with torch.cuda.device(device) if device.type == "cuda" else nullcontext():
             # NOTE compute 推理在这里执行
@@ -69,15 +71,17 @@ def scheduler(
 
     def single(payload: StagePayload) -> StagePayload:
         """单请求必须抛出异常，避免把 Exception 当作成功 payload。
-           NOTE 单条任务处理，内部调用 run/批处理
+        NOTE 单条任务处理，内部调用 run/批处理
         """
         result = run([payload])[0]
         if isinstance(result, Exception):
             raise result
+        else:
+            pass
         return result
 
     scheduler_instance = SimpleScheduler(
-        compute_fn = single,
+        compute_fn=single,
         batch_compute_fn=run,
         max_batch_size=max_batch_size,
         max_batch_wait_ms=max_batch_wait_ms,
@@ -92,7 +96,7 @@ def create_preprocessing_executor(
     max_concurrency: int = 2,
 ) -> SimpleScheduler[StagePayload, StagePayload]:
     """读取 Codec 元数据，CPU 预处理不加载任何模型权重。
-       NOTE stage 1
+    NOTE stage 1
     """
     # tip 仅仅用来获取 sample_rate，没有加载模型
     checkpoint = resolve_checkpoint(model_path)
@@ -117,10 +121,7 @@ def create_preprocessing_executor(
         # tip 将结果 state 保存到 payload.data，下一个 stage 用 payload.data 获取上一个 stage 的结果
         return store_state(payload, state)
 
-    return SimpleScheduler(
-        compute_fn = preprocess,
-        max_concurrency=max_concurrency
-    )
+    return SimpleScheduler(compute_fn=preprocess, max_concurrency=max_concurrency)
 
 
 def encode_batch(
@@ -131,7 +132,7 @@ def encode_batch(
     codebooks: int,
 ) -> list[StagePayload | Exception]:
     """逐条编码参考音频，失败不影响同批其他请求。
-       NOTE stage 2 用这个方法： waveform -> [8, codec frame]
+    NOTE stage 2 用这个方法： waveform -> [8, codec frame]
     """
     results: list[StagePayload | Exception] = []
 
@@ -139,6 +140,8 @@ def encode_batch(
         try:
             if is_cancelled(payload.request_id):
                 raise CancelledError(payload.request_id)
+            else:
+                pass
             started = time.perf_counter()
             # NOTE 读取上一个阶段的结果、waveform
             state = load_state(payload, OmniVoiceState)
@@ -152,6 +155,8 @@ def encode_batch(
                 raise ValueError(
                     "OmniVoice reference codec shape does not match checkpoint"
                 )
+            else:
+                pass
             state.reference_waveform = None
             plan_chunks(state, codec.model.config.frame_rate)
             state.engine_time_s += time.perf_counter() - started
@@ -170,6 +175,8 @@ def encode_batch(
                 )
             if is_cancelled(payload.request_id):
                 raise CancelledError(payload.request_id)
+            else:
+                pass
             # NOTE 将结果 state 保存到 payload 中
             #   将 payload 保存到 results 中
             #   [重要] stage 之间传递数据的是这个方法的返回结果， store_state 和 load_state 更新 payload 的「下一阶段需要获取的结果」以及方便下一阶段获取数据
@@ -188,7 +195,7 @@ def create_audio_encoder_executor(
     gpu_id: int | None = None,
 ) -> SimpleScheduler[StagePayload, StagePayload]:
     """参考编码器与 vocoder 共用同进程、同设备的 Codec。
-       NOTE stage 2
+    NOTE stage 2
     """
     # tip 结果 resolved 是指用什么硬件运行
     resolved = resolve_concrete_device(device, gpu_id)
@@ -205,7 +212,7 @@ def create_audio_encoder_executor(
         # partial 主要作用是为 encode_batch 预先绑定 codec 和 codebooks 两个参数，返回值是包装的 encode_batch
         #  tip 原始的 encode_batch 协议和 scheduler 第一个参数协议不一样，但是partial包装之后有两个参数已经预先写上了、协议就对上了
         partial(
-            encode_batch, # NOTE 第二步关键
+            encode_batch,  # NOTE 第二步关键
             codec=load_codec(checkpoint, str(resolved)),
             codebooks=config.num_audio_codebook,
         ),
@@ -220,10 +227,10 @@ def generate_batch(
     is_cancelled: CancellationCheck,
     *,
     model: OmniVoiceModel,
-    tokenizer: PreTrainedTokenizerBase, # tip 文本tokenizer
+    tokenizer: PreTrainedTokenizerBase,  # tip 文本tokenizer
 ) -> list[StagePayload | Exception]:
     """按采样设置分组，跨请求组批、同一请求的长文本各段顺序生成。
-       note stage 3 使用该方法
+    note stage 3 使用该方法
     """
     results: list[StagePayload | Exception] = list(payloads)
     states: dict[int, OmniVoiceState] = {}
@@ -240,6 +247,8 @@ def generate_batch(
         try:
             if is_cancelled(payload.request_id):
                 raise CancelledError(payload.request_id)
+            else:
+                pass
             # tip 获取上一阶段的结果
             state = load_state(payload, OmniVoiceState)
             assert state.reference_codes is not None and state.seed is not None
@@ -247,6 +256,8 @@ def generate_batch(
                 state.target_frames
             ):
                 raise ValueError("OmniVoice encoded request is missing its chunk plan")
+            else:
+                pass
             state.generated_codes = []
             states[index] = state
             generators[index] = torch.Generator(device=model.device).manual_seed(
@@ -277,9 +288,13 @@ def generate_batch(
                     states[index].chunk_texts
                 ):
                     continue
+                else:
+                    pass
                 if is_cancelled(payloads[index].request_id):
                     results[index] = CancelledError(payloads[index].request_id)
                     continue
+                else:
+                    pass
 
                 state = states[index]
                 active.append(index)
@@ -295,6 +310,8 @@ def generate_batch(
                 )
             if not items:
                 continue
+            else:
+                pass
             try:
                 # NOTE 推理核心代码
                 codes = sample_batch(items, model, tokenizer, is_cancelled)
@@ -313,9 +330,13 @@ def generate_batch(
     for index, payload in enumerate(payloads):
         if is_cancelled(payload.request_id):
             results[index] = CancelledError(payload.request_id)
+        else:
+            pass
         if isinstance(results[index], Exception):
             payload.data = {}
             continue
+        else:
+            pass
         state = states[index]
         state.reference_codes = None
         state.completion_tokens = sum(codes.numel() for codes in state.generated_codes)
@@ -342,7 +363,7 @@ def create_tts_engine_executor(
     gpu_id: int | None = None,
 ) -> SimpleScheduler[StagePayload, StagePayload]:
     """加载原生 OmniVoice 主干，不创建自回归调度器或 KV 缓存。
-       NOTE stage 3
+    NOTE stage 3
     """
     dtypes = {
         "float16": torch.float16,
@@ -351,6 +372,8 @@ def create_tts_engine_executor(
     }
     if dtype not in dtypes:
         raise ValueError(f"Unsupported OmniVoice dtype: {dtype}")
+    else:
+        pass
     resolved = resolve_concrete_device(device, gpu_id)
     checkpoint = resolve_checkpoint(model_path)
     # NOTE 初始化 stage，初始化 stage 的时候加载模型
@@ -365,15 +388,15 @@ def create_tts_engine_executor(
     # NOTE 拼接 qkv 的投影proj，后边一次性计算出qkv
     model.fuse_qkv_projections()
     model.fuse_gate_up_projections()
-    model.fuse_rmsnorm() # note
+    model.fuse_rmsnorm()  # note
     model.fuse_residual_add_rmsnorm()
     # tip: text - tokenizer -> text token_id
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
     return scheduler(
         partial(
-            generate_batch, # note compute_fn = generate_batch
+            generate_batch,  # note compute_fn = generate_batch
             model=model,  # tip 已经初始化的模型
-            tokenizer=tokenizer # tip 已经初始化的 text tokenizer
+            tokenizer=tokenizer,  # tip 已经初始化的 text tokenizer
         ),
         resolved,
         max_batch_size,
@@ -397,9 +420,13 @@ def decode_batch(
         try:
             if is_cancelled(payload.request_id):
                 raise CancelledError(payload.request_id)
+            else:
+                pass
             state = load_state(payload, OmniVoiceState)
             if not state.generated_codes:
                 raise ValueError("OmniVoice has no generated audio codes")
+            else:
+                pass
             states[index] = state
             for chunk_index, codes in enumerate(state.generated_codes):
                 groups[codes.shape[-1]].append((index, chunk_index))
@@ -416,6 +443,8 @@ def decode_batch(
             ]
             if not selected:
                 continue
+            else:
+                pass
             try:
                 decoded = codec.decode(
                     torch.stack(
@@ -445,8 +474,12 @@ def decode_batch(
         try:
             if is_cancelled(payload.request_id):
                 raise CancelledError(payload.request_id)
+            else:
+                pass
             if isinstance(results[index], Exception):
                 raise results[index]
+            else:
+                pass
             state = states[index]
             waveform = postprocess_audio(
                 [
@@ -485,7 +518,7 @@ def create_vocoder_executor(
     max_batch_wait_ms: int = 10,
 ) -> SimpleScheduler[StagePayload, StagePayload]:
     """使用共享 Codec 返回完整波形，不开放增量输出。
-       NOTE stage 4
+    NOTE stage 4
     """
     resolved = resolve_concrete_device(device, gpu_id)
     checkpoint = resolve_checkpoint(model_path)

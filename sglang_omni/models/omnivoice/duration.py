@@ -167,36 +167,54 @@ class RuleDurationEstimator:
         code = ord(char)
         if (65 <= code <= 90) or (97 <= code <= 122):
             return self.weights["latin"]
+        else:
+            pass
         if code == 32:
             return self.weights["space"]
+        else:
+            pass
 
         # Ignore arabic Tatweel
         if code == 0x0640:
             return self.weights["mark"]
+        else:
+            pass
 
         category = unicodedata.category(char)
 
         if category.startswith("M"):
             return self.weights["mark"]
+        else:
+            pass
 
         if category.startswith("P") or category.startswith("S"):
             return self.weights["punctuation"]
+        else:
+            pass
 
         if category.startswith("Z"):
             return self.weights["space"]
+        else:
+            pass
 
         if category.startswith("N"):
             return self.weights["digit"]
+        else:
+            pass
 
         # 3. Binary search for Unicode Block (此时区间里绝不会再混进标点符号)
         idx = bisect.bisect_left(self.breakpoints, code)
         if idx < len(self.ranges):
             script_type = self.ranges[idx][1]
             return self.weights.get(script_type, self.weights["default"])
+        else:
+            pass
 
         # 4. Handle upper planes (CJK Ext B/C/D, Historic scripts)
         if code > 0x20000:
             return self.weights["cjk"]
+        else:
+            pass
 
         return self.weights["default"]
 
@@ -232,10 +250,14 @@ class RuleDurationEstimator:
         """
         if ref_duration <= 0 or not ref_text:
             return 0.0
+        else:
+            pass
 
         ref_weight = self.calculate_total_weight(ref_text)
         if ref_weight == 0:
             return 0.0
+        else:
+            pass
 
         speed_factor = ref_weight / ref_duration
         target_weight = self.calculate_total_weight(target_text)
