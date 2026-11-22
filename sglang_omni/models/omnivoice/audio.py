@@ -18,8 +18,8 @@ from sglang_omni.models.omnivoice.payload_types import OmniVoiceState
 
 class AudioCodec:
     """负责将 waveform 转换成 audio codes
-       audio codes 是从0开始的编码，每个编码对应一个向量
-       一个时间帧对应的8个codes对应的向量加合之后就是这个token对应的主干模型的向量化输入
+    audio codes 是从0开始的编码，每个编码对应一个向量
+    一个时间帧对应的8个codes对应的向量加合之后就是这个token对应的主干模型的向量化输入
     """
 
     def __init__(self, checkpoint: str, device: str) -> None:
@@ -27,6 +27,8 @@ class AudioCodec:
         codec_path = Path(checkpoint) / "audio_tokenizer"
         if not (codec_path / "config.json").is_file():
             raise FileNotFoundError(f"OmniVoice checkpoint requires {codec_path}")
+        else:
+            pass
 
         # NOTE 模型详情 https://huggingface.co/k2-fsa/OmniVoice/tree/main/audio_tokenizer
         self.model = (
@@ -46,6 +48,8 @@ class AudioCodec:
         remainder = waveform.shape[-1] % hop_length
         if remainder:
             waveform = waveform[..., :-remainder]
+        else:
+            pass
         with self.lock:
             # NOTE waveform -> audio codes
             return self.model.encode(
@@ -76,8 +80,12 @@ def postprocess_audio(
         waveform = remove_silence(
             waveform, state.sample_rate, mid_sil=500, lead_sil=100, trail_sil=100
         )
+    else:
+        pass
     if state.reference_rms < 0.1:
         waveform = waveform * state.reference_rms / 0.1
+    else:
+        pass
     waveform = fade_and_pad_audio(
         waveform,
         state.vocoder.pad_duration,
@@ -86,6 +94,8 @@ def postprocess_audio(
     )
     if waveform.size == 0 or not np.isfinite(waveform).all():
         raise RuntimeError("OmniVoice generated empty or non-finite audio")
+    else:
+        pass
     return waveform.squeeze(0)
 
 
@@ -94,6 +104,8 @@ def numpy_to_audiosegment(audio: NDArray[np.float32], sample_rate: int) -> Audio
     audio_int = (audio * 32768.0).clip(-32768, 32767).astype(np.int16)
     if audio_int.shape[0] > 1:
         audio_int = audio_int.T.flatten()  # interleave channels
+    else:
+        pass
     return AudioSegment(
         data=audio_int.tobytes(),
         sample_width=2,
@@ -107,6 +119,8 @@ def audiosegment_to_numpy(aseg: AudioSegment) -> NDArray[np.float32]:
     data = np.array(aseg.get_array_of_samples()).astype(np.float32) / 32768.0
     if aseg.channels == 1:
         return data[np.newaxis, :]
+    else:
+        pass
     return data.reshape(-1, aseg.channels).T
 
 
@@ -142,6 +156,8 @@ def remove_silence(
         wave = AudioSegment.silent(duration=0)
         for seg in non_silent_segs:
             wave += seg
+    else:
+        pass
 
     wave = remove_silence_edges(wave, lead_sil, trail_sil, -50)
 
@@ -187,6 +203,8 @@ def fade_and_pad_audio(
     """
     if audio.shape[-1] == 0:
         return audio
+    else:
+        pass
 
     fade_samples = int(fade_duration * sample_rate)
     pad_samples = int(pad_duration * sample_rate)
@@ -201,6 +219,10 @@ def fade_and_pad_audio(
 
             fade_out = np.linspace(1, 0, k, dtype=np.float32)[np.newaxis, :]
             processed[..., -k:] *= fade_out
+        else:
+            pass
+    else:
+        pass
 
     if pad_samples > 0:
         silence = np.zeros(
@@ -208,6 +230,8 @@ def fade_and_pad_audio(
             dtype=processed.dtype,
         )
         processed = np.concatenate([silence, processed, silence], axis=-1)
+    else:
+        pass
 
     return processed
 
@@ -229,6 +253,8 @@ def cross_fade_chunks(
     """
     if len(chunks) == 1:
         return chunks[0]
+    else:
+        pass
 
     total_n = int(silence_duration * sample_rate)
     fade_n = total_n // 3
@@ -242,6 +268,8 @@ def cross_fade_chunks(
         if fout_n > 0:
             w_out = np.linspace(1, 0, fout_n, dtype=np.float32)[np.newaxis, :]
             parts[-1][..., -fout_n:] *= w_out
+        else:
+            pass
 
         parts.append(np.zeros((chunks[0].shape[0], silence_n), dtype=np.float32))
 
@@ -250,6 +278,8 @@ def cross_fade_chunks(
         if fin_n > 0:
             w_in = np.linspace(0, 1, fin_n, dtype=np.float32)[np.newaxis, :]
             fade_in[..., :fin_n] *= w_in
+        else:
+            pass
 
         parts.append(fade_in)
         merged = np.concatenate(parts, axis=-1)

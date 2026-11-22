@@ -23,6 +23,8 @@ def fuse_qkv_attention(attention: Qwen3Attention) -> None:
     if attention.forward.__func__ is fused_attention_forward:
         # 如果已经是 fused 推理则直接返回
         return
+    else:
+        pass
 
     # tip 将三个 nn.Linear 放入到一个 tuple 中
     projections = (attention.q_proj, attention.k_proj, attention.v_proj)
@@ -39,21 +41,24 @@ def fuse_qkv_attention(attention: Qwen3Attention) -> None:
         #  detach() 是指获取一个和 layer.weight 一样但是不需要梯度计算的 tensor
         #  cat() 中 dim 默认值是0，这个函数将 三个线性层按照 dim=0拼接
         torch.cat([layer.weight.detach() for layer in projections]),
-        requires_grad=False # 不为这个权重计算、累积梯度
+        requires_grad=False,  # 不为这个权重计算、累积梯度
     )
     attention.qkv_bias = None
     if attention.q_proj.bias is not None:
         # tip bias 也是 attention 的参数，这里拼接三个 bias
         attention.qkv_bias = nn.Parameter(
-            torch.cat([layer.bias.detach() for layer in projections]), requires_grad=False
+            torch.cat([layer.bias.detach() for layer in projections]),
+            requires_grad=False,
         )
+    else:
+        pass
     # 释放原来的三组投影，避免重复占用 GPU 显存；其他配置和层直接复用 tip 牛逼
     del attention.q_proj, attention.k_proj, attention.v_proj
     # note 这是动态绑定方法 dynamic method binding
     #   将 attention.forward 方法和 fused_attention_forward 方法绑定并将 attention 作为 fused_attention_forward 的 self 参数
     attention.forward = MethodType(
         fused_attention_forward,
-        attention # note 这个方法说来说去就是更新了 attention 的 qkv_sizes、qkv_weight 和 qkv_bias
+        attention,  # note 这个方法说来说去就是更新了 attention 的 qkv_sizes、qkv_weight 和 qkv_bias
     )
 
 
@@ -86,7 +91,7 @@ def fused_attention_forward(
     #       均方根思路是：先平方、避免正负相互抵消 -> 然后求平均、衡量一个数的典型大小 -> 然后开方、恢复到原来的量纲/数量级
     #           而后，每个数字与上一步获取的值相除
     query_states = self.q_norm(query_states.reshape(hidden_shape)).transpose(1, 2)
-    key_states = self.k_norm(key_states.reshape(hidden_shape)).transpose(1, 2) # 同上
+    key_states = self.k_norm(key_states.reshape(hidden_shape)).transpose(1, 2)  # 同上
     # 没有归一化
     # q\v归一化方便控制注意力计算的数据尺度
     # value不参与注意力计算，保留学习到的数据尺度
@@ -94,9 +99,7 @@ def fused_attention_forward(
 
     # todo 把位置信息融入 Q、K
     query_states, key_states = apply_rotary_pos_emb(
-        query_states,
-        key_states,
-        *position_embeddings
+        query_states, key_states, *position_embeddings
     )
 
     # 选择的是注意力计算方式
@@ -104,8 +107,8 @@ def fused_attention_forward(
         # eager：把矩阵乘法、Softmax、乘 value 分成多个操作执行
         # FlashAttention： 分块并融合计算，减少中间结果的 GPU 显存读写
         # sdpa：PyTorch 提供的统一接口，根据条件选择具体实现，可能采用 FlashAttention
-        self.config._attn_implementation,
-        eager_attention_forward
+        self.config._attn_implementation,  # noqa: leading-underscore  # Transformers configuration field.
+        eager_attention_forward,
     )
 
     # NOTE 进行注意力计算
@@ -114,13 +117,11 @@ def fused_attention_forward(
     #       形状是 [请求数量 × 2, head_num, max_sequence_length, max_sequence_length]
     attn_output, attn_weights = attention_interface(
         self,
-        query_states, #
-        key_states, #
-        value_states, #
+        query_states,  #
+        key_states,  #
+        value_states,  #
         attention_mask,
-        dropout=0.0
-            if not self.training
-            else self.attention_dropout,
+        dropout=0.0 if not self.training else self.attention_dropout,
         scaling=self.scaling,
         sliding_window=self.sliding_window,
         **kwargs,

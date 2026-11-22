@@ -10,6 +10,8 @@ from transformers.models.qwen3.modeling_qwen3 import Qwen3MLP
 
 if torch.version.cuda is not None:
     from flashinfer.activation import silu_and_mul
+else:
+    pass
 
 
 def fuse_gate_up_mlp(mlp: Qwen3MLP) -> None:
@@ -24,6 +26,8 @@ def fuse_gate_up_mlp(mlp: Qwen3MLP) -> None:
     """
     if mlp.forward.__func__ is fused_gate_up_forward:
         return
+    else:
+        pass
     # Qwen3 的 Gate 和 Up 都把 hidden_size 投影到 intermediate_size
     # note 拼接 gate_proj 和 up_prob 的 weight
     mlp.gate_up_weight = nn.Parameter(
@@ -42,9 +46,10 @@ def fused_gate_up_forward(self: Qwen3MLP, hidden_states: torch.Tensor) -> torch.
     #       gate_up_states = hidden_states @ self.gate_up_weight.T // 和后者的转置相乘
     gate_up_states = F.linear(hidden_states, self.gate_up_weight)
     if (
-        gate_up_states.is_cuda # 如果是 gpu 计算
-        and gate_up_states.dtype in (torch.float16, torch.bfloat16) # 如果 gate_up 精度是 float16
-        and self.config.hidden_act == "silu" # 如果激活函数是 silu
+        gate_up_states.is_cuda  # 如果是 gpu 计算
+        and gate_up_states.dtype
+        in (torch.float16, torch.bfloat16)  # 如果 gate_up 精度是 float16
+        and self.config.hidden_act == "silu"  # 如果激活函数是 silu
     ):
         # 一次 CUDA kernel 完成 SiLU(Gate) * Up，避免写回独立的激活中间结果。
         activated_states = silu_and_mul(gate_up_states)

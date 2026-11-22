@@ -66,10 +66,12 @@ class OmniVoicePipelineConfig(PipelineConfig):
     @model_validator(mode="after")
     def validate_single_rank(self) -> "OmniVoicePipelineConfig":
         """首版没有张量并行，拒绝将完整模型错误复制成 TP worker。
-           tip 这个方法是创建 OmniVoicePipelineConfig 对象过程中、所有字段都就绪之后调用的
+        tip 这个方法是创建 OmniVoicePipelineConfig 对象过程中、所有字段都就绪之后调用的
         """
         if any(stage.tp_size != 1 for stage in self.stages):
             raise ValueError("OmniVoice requires tp_size=1")
+        else:
+            pass
         return self
 
 

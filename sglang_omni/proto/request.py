@@ -60,12 +60,12 @@ class OmniRequest:
 @dataclass
 class StagePayload:
     """Payload passed between stages with request context.
-       NOTE stage 之间传递的请求上下文
+    NOTE stage 之间传递的请求上下文
     """
 
-    request_id: str # 请求id
-    request: OmniRequest # OmniRequest 是最开始用户的请求
-    data: object # a_stage -> b_stage 的时候 a_stage 的输出
+    request_id: str  # 请求id
+    request: OmniRequest  # OmniRequest 是最开始用户的请求
+    data: object  # a_stage -> b_stage 的时候 a_stage 的输出
     # Scheduler-local stream ingress state. These fields intentionally stay
     # out of to_dict(); they are rebuilt by the receiving scheduler and never
     # form part of the inter-stage wire contract.

@@ -26,11 +26,13 @@ class OmniVoiceConfig(PretrainedConfig):
             llm_config = Qwen3Config()
         elif isinstance(llm_config, dict):
             llm_config = Qwen3Config(**llm_config)
+        else:
+            pass
         self.llm_config = llm_config
         super().__init__(**kwargs)
         self.audio_vocab_size = audio_vocab_size
         self.audio_mask_id = audio_mask_id
-        self.num_audio_codebook = num_audio_codebook # 8
+        self.num_audio_codebook = num_audio_codebook  # 8
         self.audio_codebook_weights = audio_codebook_weights or [8, 8, 6, 6, 4, 4, 2, 2]
 
 

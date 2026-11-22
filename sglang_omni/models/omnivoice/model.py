@@ -60,7 +60,7 @@ class OmniVoiceModel(PreTrainedModel):
 
         # NOTE: 定义一个线性层
         self.audio_heads = nn.Linear(
-            config.llm_config.hidden_size, # input dim
+            config.llm_config.hidden_size,  # input dim
             # NOTE
             #   输出维度是 audio_vocab_size * 8 是将 transformer layer 输出的 hidden_state 转换成 8 层 audio_codes
             #   每一个 audio_vocab_size 选出一个 audio code
@@ -83,11 +83,15 @@ class OmniVoiceModel(PreTrainedModel):
 
     def fuse_rmsnorm(self) -> None:
         """覆盖主干、Q/K 及最终 RMSNorm，保留每个模块的权重和 eps。
-           NOTE 构建stage实现的时候调用了
+        NOTE 构建stage实现的时候调用了
         """
-        for module in self.llm.modules(): # 递归遍历模型自身及其所有子模块中的 nn.Module 实现
+        for (
+            module
+        ) in self.llm.modules():  # 递归遍历模型自身及其所有子模块中的 nn.Module 实现
             if isinstance(module, Qwen3RMSNorm):
                 fuse_rmsnorm(module)
+            else:
+                pass
 
     def fuse_residual_add_rmsnorm(self) -> None:
         """逐层融合 Attention 后的残差相加与 RMSNorm，仅用于内部推理。"""
@@ -100,11 +104,11 @@ class OmniVoiceModel(PreTrainedModel):
 
     def prepare_fixed_inputs(
         self,
-        input_ids: torch.Tensor, # shape 是 [batch_size * 2, 8, full_length]
-        audio_mask: torch.Tensor # shape 是 [batch_size * 2, full_length]，标识对应位置是文本还是音频
+        input_ids: torch.Tensor,  # shape 是 [batch_size * 2, 8, full_length]
+        audio_mask: torch.Tensor,  # shape 是 [batch_size * 2, full_length]，标识对应位置是文本还是音频
     ) -> FixedInputs:
         """
-           note 在当前分段迭代前准备文本向量、mask 视图和位置编号，供各轮复用
+        note 在当前分段迭代前准备文本向量、mask 视图和位置编号，供各轮复用
         """
 
         return FixedInputs(
@@ -117,8 +121,7 @@ class OmniVoiceModel(PreTrainedModel):
             audio_embedding_mask=audio_mask.unsqueeze(-1),
             # 生成 [0 ... full_length-1] 的一维 tensor，然后将 shape 改成 [1, full_length]
             position_ids=torch.arange(
-                input_ids.shape[-1], # full_length
-                device=input_ids.device
+                input_ids.shape[-1], device=input_ids.device  # full_length
             ).unsqueeze(0),
         )
 
@@ -128,7 +131,7 @@ class OmniVoiceModel(PreTrainedModel):
         fixed_inputs: FixedInputs,
         attention_mask: torch.Tensor,  # [batch_size * 2, 1, max_seq_len, max_seq_len]
         *,
-        target_position_indices: torch.Tensor, # [x] 一维的 tensor，元素值是目标音频对应的位置；另外之所以是一维是因为将 batch_size * 2 和每个batch中的 max_seq_length 打平了
+        target_position_indices: torch.Tensor,  # [x] 一维的 tensor，元素值是目标音频对应的位置；另外之所以是一维是因为将 batch_size * 2 和每个batch中的 max_seq_length 打平了
     ) -> torch.Tensor:
         """完整序列经过主干后，仅投影目标音频位置。
 
@@ -149,7 +152,9 @@ class OmniVoiceModel(PreTrainedModel):
             #   2. `A @ B`、torch.matmul(A, B)、`torch.dot(a, b)` 是点积类计算
             input_ids * fixed_inputs.audio_code_mask
             #   note 这个加法计算也是先广播、然后在计算。对不同层的音频tokenID加上对应层的值
-            + self.codebook_layer_offsets.view(1, -1, 1) # [1, 8, 1]，具体值是 [0, 1025, 2050, 3075, 4100, 5125, 6150, 7175]
+            + self.codebook_layer_offsets.view(
+                1, -1, 1
+            )  # [1, 8, 1]，具体值是 [0, 1025, 2050, 3075, 4100, 5125, 6150, 7175]
         )
         # tip 对音频进行向量化，并且对应 seq 的向量进行合并
         audio_embeddings = self.audio_embeddings(audio_ids).sum(dim=1)
@@ -161,7 +166,7 @@ class OmniVoiceModel(PreTrainedModel):
             # true 时选择 [batch_size * 2, all_seq_len, hidden_size]
             audio_embeddings,
             # false 时选择 [batch_size * 2, all_seq_len, hidden_size]
-            fixed_inputs.text_embeddings
+            fixed_inputs.text_embeddings,
         )
 
         # 启用残差融合时只写入这份独立的临时张量，不与 fixed_inputs 共享存储。
@@ -177,7 +182,7 @@ class OmniVoiceModel(PreTrainedModel):
             #      前边的注意力计算结果也会变化，所以
             use_cache=False,
             return_dict=True,
-        ).last_hidden_state # NOTE 【重要】对于 transformer layer/ transformer 主干，输入形状和输出形状不变
+        ).last_hidden_state  # NOTE 【重要】对于 transformer layer/ transformer 主干，输入形状和输出形状不变
 
         # note
         #  获取结果音频位置的 [x, hidden_size] 数据，后边进行 audio_heads(lm_head)计算的时候仅仅计算这些位置
@@ -185,8 +190,8 @@ class OmniVoiceModel(PreTrainedModel):
         #       audio_heads 之后获取8层编码信息之后进行 sample 的时候，才会考虑是否是在同一个请求中（比如一个推理中每个 step 要填充的音频数量不一致）
         #  flatten 作用：[batch_size * 2, max_seq_len, hidden_size] → [total_target_frames * 2, hidden_size]
         target_hidden_states = hidden_states.flatten(0, 1).index_select(
-            0, # 表示沿着第0维度，获取这个维度要获取的 target_position_indices 值
-            target_position_indices
+            0,  # 表示沿着第0维度，获取这个维度要获取的 target_position_indices 值
+            target_position_indices,
         )
         logits = self.audio_heads(target_hidden_states)
 
@@ -204,8 +209,8 @@ class OmniVoiceModel(PreTrainedModel):
         return logits.view(
             # x.shape 是 [total_target_frames * 2, hidden_size], 获取[0] 就是 第一个元素 total_target_frames * 2
             #   另外 .shape 属性类型是 torch.Size
-            target_hidden_states.shape[0], # tip total_target_frames * 2
-            self.config.num_audio_codebook, # 8
+            target_hidden_states.shape[0],  # tip total_target_frames * 2
+            self.config.num_audio_codebook,  # 8
             self.config.audio_vocab_size,
         ).permute(1, 0, 2)
 

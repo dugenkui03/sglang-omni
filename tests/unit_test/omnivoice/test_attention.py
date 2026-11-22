@@ -31,8 +31,8 @@ def test_fused_attention_matches_separate_projections(
         num_key_value_heads=key_value_heads,
         head_dim=4,
         attention_bias=attention_bias,
+        attn_implementation="sdpa",
     )
-    config._attn_implementation = "sdpa"
     with torch.random.fork_rng():
         torch.manual_seed(23)
         reference = Qwen3Attention(config, 0).to(dtype).eval()
@@ -47,10 +47,14 @@ def test_fused_attention_matches_separate_projections(
     assert sum(parameter.numel() for parameter in fused.parameters()) == parameter_count
     assert not {"q_proj", "k_proj", "v_proj"}.intersection(dict(fused.named_children()))
 
-    with patch("torch.nn.functional.linear", wraps=torch.nn.functional.linear) as linear:
+    with patch(
+        "torch.nn.functional.linear", wraps=torch.nn.functional.linear
+    ) as linear:
         expected, _ = reference(hidden_states, embeddings, attention_mask)
         assert linear.call_count == 4
-    with patch("torch.nn.functional.linear", wraps=torch.nn.functional.linear) as linear:
+    with patch(
+        "torch.nn.functional.linear", wraps=torch.nn.functional.linear
+    ) as linear:
         actual, _ = fused(hidden_states, embeddings, attention_mask)
         assert linear.call_count == 2
     tolerance = {
